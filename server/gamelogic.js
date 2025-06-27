@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Village = require('../models/Village');
 const Building = require('../models/Building');
 const Troop = require('../models/Troop');
@@ -84,10 +85,12 @@ async function createVillage(userId, name) {
 }
 
 async function getVillage(userId, villageId = null) {
+    const userObjectId = new mongoose.Types.ObjectId(userId);
     if (villageId) {
-        return Village.findOne({ _id: villageId, user_id: userId }).lean();
+        const vid = new mongoose.Types.ObjectId(villageId);
+        return Village.findOne({ _id: vid, user_id: userObjectId }).lean();
     }
-    return Village.findOne({ user_id: userId }).lean();
+    return Village.findOne({ user_id: userObjectId }).lean();
 }
 
 async function updateVillageResources(village) {
@@ -127,7 +130,8 @@ async function updateVillageResources(village) {
 }
 
 async function getBuildings(villageId) {
-    const buildings = await Building.find({ village_id: villageId }).lean();
+    const id = new mongoose.Types.ObjectId(villageId);
+    const buildings = await Building.find({ village_id: id }).lean();
     return buildings.map(b => ({
         ...b,
         name: BUILDING_TYPES[b.building_type].name,
@@ -138,15 +142,16 @@ async function getBuildings(villageId) {
 }
 
 async function upgradeBuilding(userId, villageId, buildingType) {
-    const village = await getVillage(userId, villageId);
+    const vid = new mongoose.Types.ObjectId(villageId);
+    const village = await getVillage(userId, vid);
     if (!village) throw new Error('Деревня не найдена');
     const updated = await updateVillageResources(village);
-    const building = await Building.findOne({ village_id: villageId, building_type: buildingType });
+    const building = await Building.findOne({ village_id: vid, building_type: buildingType });
     if (!building) throw new Error('Здание не найдено');
     if (building.is_upgrading) throw new Error('Здание уже улучшается');
 
     if (buildingType !== 'tribal_hall') {
-        const tribalHall = await Building.findOne({ village_id: villageId, building_type: 'tribal_hall' });
+        const tribalHall = await Building.findOne({ village_id: vid, building_type: 'tribal_hall' });
         if (building.level >= tribalHall.level) {
             throw new Error('Сначала улучшите Tribal Hall');
         }
@@ -157,7 +162,7 @@ async function upgradeBuilding(userId, villageId, buildingType) {
         throw new Error('Недостаточно ресурсов');
     }
 
-    await Village.updateOne({ _id: villageId }, {
+    await Village.updateOne({ _id: vid }, {
         $inc: { wood: -cost.wood, clay: -cost.clay, iron: -cost.iron, food: -cost.food }
     });
 
@@ -168,7 +173,8 @@ async function upgradeBuilding(userId, villageId, buildingType) {
 }
 
 async function getTroops(villageId) {
-    const troops = await Troop.find({ village_id: villageId }).lean();
+    const id = new mongoose.Types.ObjectId(villageId);
+    const troops = await Troop.find({ village_id: id }).lean();
     return troops.map(t => ({
         ...t,
         name: TROOP_TYPES[t.troop_type].name,
@@ -183,10 +189,11 @@ async function getTroops(villageId) {
 async function trainTroops(userId, villageId, troopType, amount) {
     if (!TROOP_TYPES[troopType]) throw new Error('Неверный тип войск');
     if (amount < 1) throw new Error('Количество должно быть больше 0');
-    const village = await getVillage(userId, villageId);
+    const vid = new mongoose.Types.ObjectId(villageId);
+    const village = await getVillage(userId, vid);
     if (!village) throw new Error('Деревня не найдена');
 
-    const barracks = await Building.findOne({ village_id: villageId, building_type: 'barracks' });
+    const barracks = await Building.findOne({ village_id: vid, building_type: 'barracks' });
     if (!barracks || barracks.level < 1) throw new Error('Постройте казармы');
 
     const updated = await updateVillageResources(village);
@@ -201,13 +208,13 @@ async function trainTroops(userId, villageId, troopType, amount) {
         throw new Error('Недостаточно ресурсов');
     }
 
-    await Village.updateOne({ _id: villageId }, {
+    await Village.updateOne({ _id: vid }, {
         $inc: { wood: -totalCost.wood, clay: -totalCost.clay, iron: -totalCost.iron, food: -totalCost.food }
     });
 
     const trainTime = info.trainTime * amount;
     const finishTime = new Date(Date.now() + trainTime * 60000);
-    await TrainingQueue.create({ village_id: villageId, troop_type: troopType, amount, finish_time: finishTime });
+    await TrainingQueue.create({ village_id: vid, troop_type: troopType, amount, finish_time: finishTime });
     return { success: true, finishTime: finishTime.toISOString(), trainTime };
 }
 
@@ -217,8 +224,10 @@ async function getWorldMap() {
 }
 
 async function attackVillage(userId, fromVillageId, toVillageId) {
-    const fromVillage = await getVillage(userId, fromVillageId);
-    const toVillage = await Village.findById(toVillageId).lean();
+    const fromId = new mongoose.Types.ObjectId(fromVillageId);
+    const toId = new mongoose.Types.ObjectId(toVillageId);
+    const fromVillage = await getVillage(userId, fromId);
+    const toVillage = await Village.findById(toId).lean();
     if (!fromVillage || !toVillage) throw new Error('Деревня не найдена');
     // simplified attack logic
     return { success: true };
