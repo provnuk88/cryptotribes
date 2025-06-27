@@ -1,11 +1,10 @@
 const crypto = require('crypto');
 const { logger, paymentLogger } = require('./logger');
-// Legacy payment code expected SQLite helper functions from "database.js".
-// That module has been removed, so provide no-op placeholders to keep the
-// payment module functional without requiring the old file.
-async function runAsync() {}
-async function getAsync() { return null; }
-async function allAsync() { return []; }
+const Payment = require('../models/Payment');
+const CrystalHistory = require('../models/CrystalHistory');
+const PromoCode = require('../models/PromoCode');
+const PromoUse = require('../models/PromoUse');
+const User = require('../models/User');
 
 // Конфигурация платежных систем
 const PAYMENT_CONFIG = {
@@ -108,13 +107,17 @@ async function createStripePayment(userId, packageId, customerEmail) {
             }
         });
         
-        // Сохраняем информацию о платеже
-        await runAsync(
-            `INSERT INTO payments (user_id, transaction_id, amount, currency, crystals, status, payment_method, package_id) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [userId, session.id, pkg.price, PAYMENT_CONFIG.stripe.currency, 
-             pkg.crystals + pkg.bonus, 'pending', 'stripe', packageId]
-        );
+        // Сохраняем информацию о платеже в MongoDB
+        await Payment.create({
+            user_id: userId,
+            transaction_id: session.id,
+            amount: pkg.price,
+            currency: PAYMENT_CONFIG.stripe.currency,
+            crystals: pkg.crystals + pkg.bonus,
+            status: 'pending',
+            payment_method: 'stripe',
+            package_id: packageId
+        });
         
         paymentLogger.paymentInitiated(userId, pkg.price, PAYMENT_CONFIG.stripe.currency, 'stripe');
         
@@ -204,12 +207,17 @@ async function createCryptoPayment(userId, packageId, paymentCurrency = 'USDT') 
         const invoice = response.data;
         
         // Сохраняем информацию о платеже
-        await runAsync(
-            `INSERT INTO payments (user_id, transaction_id, amount, currency, crystals, status, payment_method, package_id, payment_address) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [userId, invoice.id, pkg.price, paymentCurrency, 
-             pkg.crystals + pkg.bonus, 'pending', 'crypto', packageId, invoice.pay_address]
-        );
+        await Payment.create({
+            user_id: userId,
+            transaction_id: invoice.id,
+            amount: pkg.price,
+            currency: paymentCurrency,
+            crystals: pkg.crystals + pkg.bonus,
+            status: 'pending',
+            payment_method: 'crypto',
+            package_id: packageId,
+            payment_address: invoice.pay_address
+        });
         
         paymentLogger.paymentInitiated(userId, pkg.price, paymentCurrency, 'crypto');
         
@@ -244,11 +252,8 @@ async function handleCryptoWebhook(req, res) {
     
     // Обрабатываем статус платежа
     if (payload.payment_status === 'finished') {
-        const payment = await getAsync(
-            'SELECT * FROM payments WHERE transaction_id = ?',
-            [payload.payment_id]
-        );
-        
+        const payment = await Payment.findOne({ transaction_id: payload.payment_id });
+
         if (payment) {
             await completePayment(
                 payment.transaction_id,
@@ -270,58 +275,34 @@ async function handleCryptoWebhook(req, res) {
 async function completePayment(transactionId, userId, crystals, method) {
     try {
         // Проверяем, не был ли платеж уже обработан
-        const payment = await getAsync(
-            'SELECT * FROM payments WHERE transaction_id = ? AND status = ?',
-            [transactionId, 'completed']
-        );
-        
-        if (payment) {
+        const already = await Payment.findOne({ transaction_id: transactionId, status: 'completed' });
+
+        if (already) {
             logger.warn('Payment already processed', { transactionId });
             return;
         }
-        
-        // Начинаем транзакцию
-        await runAsync('BEGIN TRANSACTION');
-        
-        try {
-            // Обновляем статус платежа
-            await runAsync(
-                'UPDATE payments SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE transaction_id = ?',
-                ['completed', transactionId]
-            );
-            
-            // Добавляем кристаллы пользователю
-            await runAsync(
-                'UPDATE users SET crystals = crystals + ? WHERE id = ?',
-                [crystals, userId]
-            );
-            
-            // Создаем запись в истории
-            await runAsync(
-                `INSERT INTO crystal_history (user_id, amount, type, description) 
-                 VALUES (?, ?, ?, ?)`,
-                [userId, crystals, 'purchase', `Покупка кристаллов (${method})`]
-            );
-            
-            // Коммитим транзакцию
-            await runAsync('COMMIT');
-            
-            // Логируем успешный платеж
-            paymentLogger.paymentCompleted(userId, transactionId, crystals, method);
-            
-            // Отправляем уведомление пользователю (TODO: реализовать)
-            // await sendNotification(userId, 'payment_success', { crystals });
-            
-        } catch (error) {
-            await runAsync('ROLLBACK');
-            throw error;
-        }
-        
+
+        // Обновляем статус платежа
+        await Payment.updateOne({ transaction_id: transactionId }, { status: 'completed', completed_at: new Date() });
+
+        // Добавляем кристаллы пользователю
+        await User.updateOne({ _id: userId }, { $inc: { crystals: crystals } });
+
+        // Создаем запись в истории
+        await CrystalHistory.create({
+            user_id: userId,
+            amount: crystals,
+            type: 'purchase',
+            description: `Покупка кристаллов (${method})`
+        });
+
+        paymentLogger.paymentCompleted(userId.toString(), transactionId, crystals, method);
+
     } catch (error) {
-        logger.error('Payment completion error', { 
-            error: error.message, 
-            transactionId, 
-            userId 
+        logger.error('Payment completion error', {
+            error: error.message,
+            transactionId,
+            userId
         });
         throw error;
     }
@@ -329,52 +310,49 @@ async function completePayment(transactionId, userId, crystals, method) {
 
 // Отмена платежа
 async function cancelPayment(transactionId) {
-    await runAsync(
-        'UPDATE payments SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE transaction_id = ?',
-        ['cancelled', transactionId]
+    await Payment.updateOne(
+        { transaction_id: transactionId },
+        { status: 'cancelled', completed_at: new Date() }
     );
-    
+
     logger.info('Payment cancelled', { transactionId });
 }
 
 // Получение истории платежей пользователя
 async function getUserPaymentHistory(userId) {
-    const payments = await allAsync(
-        `SELECT * FROM payments 
-         WHERE user_id = ? 
-         ORDER BY created_at DESC 
-         LIMIT 20`,
-        [userId]
-    );
-    
-    return payments;
+    return Payment.find({ user_id: userId })
+        .sort({ created_at: -1 })
+        .limit(20)
+        .lean();
 }
 
 // Проверка лимитов платежей
 async function checkPaymentLimits(userId) {
     // Проверяем количество платежей за последние 24 часа
-    const recentPayments = await getAsync(
-        `SELECT COUNT(*) as count, SUM(amount) as total 
-         FROM payments 
-         WHERE user_id = ? 
-         AND status = 'completed'
-         AND created_at > datetime('now', '-24 hours')`,
-        [userId]
-    );
-    
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [count, totalResult] = await Promise.all([
+        Payment.countDocuments({ user_id: userId, status: 'completed', created_at: { $gt: since } }),
+        Payment.aggregate([
+            { $match: { user_id: userId, status: 'completed', created_at: { $gt: since } } },
+            { $group: { _id: null, total: { $sum: '$amount' } } }
+        ])
+    ]);
+
+    const total = totalResult[0] ? totalResult[0].total : 0;
+
     const limits = {
         daily_transactions: 10,
         daily_amount: 500
     };
-    
-    if (recentPayments.count >= limits.daily_transactions) {
+
+    if (count >= limits.daily_transactions) {
         throw new Error('Превышен дневной лимит транзакций');
     }
-    
-    if (recentPayments.total >= limits.daily_amount) {
+
+    if (total >= limits.daily_amount) {
         throw new Error('Превышен дневной лимит платежей');
     }
-    
+
     return true;
 }
 
@@ -382,54 +360,33 @@ async function checkPaymentLimits(userId) {
 
 // Проверка и применение промокода
 async function applyPromoCode(userId, code) {
-    const promo = await getAsync(
-        `SELECT * FROM promo_codes 
-         WHERE code = ? 
-         AND active = 1 
-         AND (uses_left > 0 OR uses_left IS NULL)
-         AND (expires_at > CURRENT_TIMESTAMP OR expires_at IS NULL)`,
-        [code.toUpperCase()]
-    );
+    const now = new Date();
+    const promo = await PromoCode.findOne({
+        code: code.toUpperCase(),
+        active: true,
+        $and: [
+            { $or: [{ uses_left: { $gt: 0 } }, { uses_left: null }] },
+            { $or: [{ expires_at: { $gt: now } }, { expires_at: null }] }
+        ]
+    }).lean();
     
     if (!promo) {
         throw new Error('Недействительный промокод');
     }
     
     // Проверяем, не использовал ли пользователь этот код
-    const used = await getAsync(
-        'SELECT * FROM promo_uses WHERE user_id = ? AND promo_id = ?',
-        [userId, promo.id]
-    );
+    const used = await PromoUse.findOne({ user_id: userId, promo_id: promo._id });
     
     if (used) {
         throw new Error('Вы уже использовали этот промокод');
     }
     
-    // Применяем промокод
-    await runAsync('BEGIN TRANSACTION');
-    
     try {
-        // Даем кристаллы
-        await runAsync(
-            'UPDATE users SET crystals = crystals + ? WHERE id = ?',
-            [promo.crystals, userId]
-        );
-        
-        // Записываем использование
-        await runAsync(
-            'INSERT INTO promo_uses (user_id, promo_id) VALUES (?, ?)',
-            [userId, promo.id]
-        );
-        
-        // Уменьшаем количество использований
+        await User.updateOne({ _id: userId }, { $inc: { crystals: promo.crystals } });
+        await PromoUse.create({ user_id: userId, promo_id: promo._id });
         if (promo.uses_left !== null) {
-            await runAsync(
-                'UPDATE promo_codes SET uses_left = uses_left - 1 WHERE id = ?',
-                [promo.id]
-            );
+            await PromoCode.updateOne({ _id: promo._id }, { $inc: { uses_left: -1 } });
         }
-        
-        await runAsync('COMMIT');
         
         logger.info('Promo code applied', { userId, code, crystals: promo.crystals });
         
@@ -440,7 +397,6 @@ async function applyPromoCode(userId, code) {
         };
         
     } catch (error) {
-        await runAsync('ROLLBACK');
         throw error;
     }
 }

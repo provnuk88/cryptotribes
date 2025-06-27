@@ -70,6 +70,7 @@ function requireAuth(req, res, next) {
     if (!req.session.userId) {
         return res.status(401).json({ error: 'Требуется авторизация' });
     }
+    req.userIdObject = mongoose.Types.ObjectId(req.session.userId);
     next();
 }
 
@@ -109,7 +110,7 @@ app.post('/api/register', async (req, res) => {
 
         gameLogger.userRegistered(username, user._id.toString());
 
-        res.json({ success: true, username, csrfToken: req.session.csrfToken });
+        res.json({ success: true, userId: user._id.toString(), username, csrfToken: req.session.csrfToken });
     } catch (error) {
         logger.error('Ошибка регистрации:', error);
         res.status(500).json({ error: 'Ошибка сервера' });
@@ -145,7 +146,7 @@ app.post('/api/login', bruteForceProtection, async (req, res) => {
 
         gameLogger.userLogin(user.username, user._id.toString());
 
-        res.json({ success: true, username: user.username, csrfToken: req.session.csrfToken });
+        res.json({ success: true, userId: user._id.toString(), username: user.username, csrfToken: req.session.csrfToken });
     } catch (error) {
         logger.error('Ошибка входа:', error);
         res.status(500).json({ error: 'Ошибка сервера' });
@@ -161,7 +162,7 @@ app.post('/api/logout', (req, res) => {
 // Текущий пользователь
 app.get('/api/user', requireAuth, async (req, res) => {
     try {
-        const user = await User.findById(req.session.userId).lean();
+        const user = await User.findById(req.userIdObject).lean();
         res.json({
             userId: user._id.toString(),
             username: user.username,
@@ -181,7 +182,7 @@ app.get('/api/user', requireAuth, async (req, res) => {
 app.get('/api/village/:id?', requireAuth, async (req, res) => {
     try {
         const villageId = req.params.id;
-        const village = await gameLogic.getVillage(req.session.userId, villageId);
+        const village = await gameLogic.getVillage(req.userIdObject, villageId);
         
         if (!village) {
             return res.status(404).json({ error: 'Деревня не найдена' });
@@ -189,8 +190,8 @@ app.get('/api/village/:id?', requireAuth, async (req, res) => {
         
         // Обновляем ресурсы перед отправкой
         const updatedVillage = await gameLogic.updateVillageResources(village);
-        
-        res.json(updatedVillage);
+
+        res.json({ ...updatedVillage, id: updatedVillage._id.toString() });
     } catch (error) {
         logger.error('Ошибка получения деревни:', error);
         res.status(500).json({ error: 'Ошибка сервера' });
@@ -214,8 +215,13 @@ app.post('/api/build', requireAuth, async (req, res) => {
     const { villageId, buildingType } = req.body;
     
     try {
+codex/починить-ветку-codex-test-backend-cryptotribes
         const result = await gameLogic.upgradeBuilding(req.session.userId, villageId, buildingType);
         res.status(200).json(result);
+
+        const result = await gameLogic.upgradeBuilding(req.userIdObject, villageId, buildingType);
+        res.json(result);
+ codex-test
     } catch (error) {
         logger.error('Ошибка строительства:', error);
         res.status(400).json({ error: error.message });
@@ -239,8 +245,13 @@ app.post('/api/train', requireAuth, async (req, res) => {
     const { villageId, troopType, amount } = req.body;
     
     try {
+ codex/починить-ветку-codex-test-backend-cryptotribes
         const result = await gameLogic.trainTroops(req.session.userId, villageId, troopType, amount);
         res.status(200).json(result);
+
+        const result = await gameLogic.trainTroops(req.userIdObject, villageId, troopType, amount);
+        res.json(result);
+codex-test
     } catch (error) {
         logger.error('Ошибка обучения войск:', error);
         res.status(400).json({ error: error.message });
@@ -263,8 +274,13 @@ app.post('/api/attack', requireAuth, async (req, res) => {
     const { fromVillageId, toVillageId, troops } = req.body;
     
     try {
+codex/починить-ветку-codex-test-backend-cryptotribes
         const result = await gameLogic.attackVillage(req.session.userId, fromVillageId, toVillageId, troops);
         res.status(200).json(result);
+
+        const result = await gameLogic.attackVillage(req.userIdObject, fromVillageId, toVillageId, troops);
+        res.json(result);
+ codex-test
     } catch (error) {
         logger.error('Ошибка атаки:', error);
         res.status(400).json({ error: error.message });
@@ -278,8 +294,13 @@ app.post('/api/tribe/create', requireAuth, async (req, res) => {
     const { name, tag } = req.body;
     
     try {
+ codex/починить-ветку-codex-test-backend-cryptotribes
         const result = await gameLogic.createTribe(req.session.userId, name, tag);
         res.status(200).json(result);
+
+        const result = await gameLogic.createTribe(req.userIdObject, name, tag);
+        res.json(result);
+ codex-test
     } catch (error) {
         logger.error('Ошибка создания племени:', error);
         res.status(400).json({ error: error.message });
@@ -302,8 +323,13 @@ app.post('/api/tribe/join', requireAuth, async (req, res) => {
     const { tribeId } = req.body;
     
     try {
+ codex/починить-ветку-codex-test-backend-cryptotribes
         const result = await gameLogic.joinTribe(req.session.userId, tribeId);
         res.status(200).json(result);
+
+        const result = await gameLogic.joinTribe(req.userIdObject, tribeId);
+        res.json(result);
+ codex-test
     } catch (error) {
         logger.error('Ошибка присоединения к племени:', error);
         res.status(400).json({ error: error.message });
@@ -325,14 +351,14 @@ app.post('/api/shop/create-payment', requireAuth, async (req, res) => {
     
     try {
         // Проверяем лимиты
-        await checkPaymentLimits(req.session.userId);
+        await checkPaymentLimits(req.userIdObject);
         
         let result;
         if (method === 'card') {
-            const user = await User.findById(req.session.userId).lean();
-            result = await createStripePayment(req.session.userId, packageId, user?.email);
+            const user = await User.findById(req.userIdObject).lean();
+            result = await createStripePayment(req.userIdObject, packageId, user?.email);
         } else if (method === 'crypto') {
-            result = await createCryptoPayment(req.session.userId, packageId, currency || 'USDT');
+            result = await createCryptoPayment(req.userIdObject, packageId, currency || 'USDT');
         } else {
             return res.status(400).json({ error: 'Неверный метод оплаты' });
         }
@@ -354,7 +380,7 @@ app.post('/api/payments/crypto/webhook', handleCryptoWebhook);
 // История платежей
 app.get('/api/shop/history', requireAuth, async (req, res) => {
     try {
-        const history = await getUserPaymentHistory(req.session.userId);
+        const history = await getUserPaymentHistory(req.userIdObject);
         res.json(history);
     } catch (error) {
         res.status(500).json({ error: 'Ошибка получения истории' });
@@ -370,7 +396,7 @@ app.post('/api/shop/promo', requireAuth, async (req, res) => {
     }
     
     try {
-        const result = await applyPromoCode(req.session.userId, code);
+        const result = await applyPromoCode(req.userIdObject, code);
         res.json(result);
     } catch (error) {
         res.status(400).json({ error: error.message });
@@ -394,8 +420,13 @@ app.post('/api/speed-up', requireAuth, async (req, res) => {
     const { actionId, type } = req.body;
     
     try {
+ codex/починить-ветку-codex-test-backend-cryptotribes
         const result = await gameLogic.speedUpAction(req.session.userId, actionId, type);
         res.status(200).json(result);
+
+        const result = await gameLogic.speedUpAction(req.userIdObject, actionId, type);
+        res.json(result);
+ codex-test
     } catch (error) {
         logger.error('Ошибка ускорения:', error);
         res.status(400).json({ error: error.message });
