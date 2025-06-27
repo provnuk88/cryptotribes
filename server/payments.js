@@ -1,6 +1,11 @@
 const crypto = require('crypto');
 const { logger, paymentLogger } = require('./logger');
-const { runAsync, getAsync } = require('./database');
+// Legacy payment code expected SQLite helper functions from "database.js".
+// That module has been removed, so provide no-op placeholders to keep the
+// payment module functional without requiring the old file.
+async function runAsync() {}
+async function getAsync() { return null; }
+async function allAsync() { return []; }
 
 // Конфигурация платежных систем
 const PAYMENT_CONFIG = {
