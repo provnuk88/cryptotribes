@@ -436,29 +436,31 @@ app.post('/api/speed-up', requireAuth, async (req, res) => {
 // === ИГРОВОЙ ЦИКЛ ===
 
 // Обновление ресурсов каждую минуту
-setInterval(async () => {
-    try {
-        performance.start('resource-update');
-        await gameLogic.updateAllVillagesResources();
-        const duration = performance.end('resource-update');
-        gameLogger.resourcesUpdated('all', duration);
-        
-        performance.start('construction-queue');
-        await gameLogic.processConstructionQueue();
-        performance.end('construction-queue');
-        
-        performance.start('training-queue');
-        await gameLogic.processTrainingQueue();
-        performance.end('training-queue');
-        
-        performance.start('process-attacks');
-        await gameLogic.processAttacks();
-        performance.end('process-attacks');
-        
-    } catch (error) {
-        logger.error('Ошибка игрового цикла:', error);
-    }
-}, 60000); // Каждую минуту
+if (process.env.NODE_ENV !== 'test') {
+    setInterval(async () => {
+        try {
+            performance.start('resource-update');
+            await gameLogic.updateAllVillagesResources();
+            const duration = performance.end('resource-update');
+            gameLogger.resourcesUpdated('all', duration);
+
+            performance.start('construction-queue');
+            await gameLogic.processConstructionQueue();
+            performance.end('construction-queue');
+
+            performance.start('training-queue');
+            await gameLogic.processTrainingQueue();
+            performance.end('training-queue');
+
+            performance.start('process-attacks');
+            await gameLogic.processAttacks();
+            performance.end('process-attacks');
+
+        } catch (error) {
+            logger.error('Ошибка игрового цикла:', error);
+        }
+    }, 60000); // Каждую минуту
+}
 
 // Health check endpoint
 app.get('/health', (req, res) => {
