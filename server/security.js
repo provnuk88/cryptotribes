@@ -3,7 +3,7 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const bcrypt = require('bcryptjs');
-const { initDatabase, db } = require('./database');
+const db = require('./db');
 const gameLogic = require('./gameLogic');
 const { logger, httpLogger, gameLogger, performance } = require('./logger');
 const { 
@@ -61,7 +61,7 @@ app.use(session({
 }));
 
 // Инициализация базы данных
-initDatabase();
+// Подключение к MongoDB выполняется в db.js
 
 // Middleware для проверки авторизации
 function requireAuth(req, res, next) {
