@@ -1,5 +1,9 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
+
+const TEST_URI = process.env.MONGODB_TEST_URI || 'mongodb://localhost:27017/cryptotribes_test';
+process.env.MONGODB_URI = TEST_URI;
+
 const app = require('../server/server');
 const Village = require('../models/Village');
 const Building = require('../models/Building');
@@ -18,6 +22,10 @@ beforeAll(async () => {
 afterAll(async () => {
   await mongoose.connection.db.dropDatabase();
   await mongoose.disconnect();
+
+  if (typeof app?.close === 'function') {
+    await new Promise((resolve) => app.close(resolve));
+  }
 });
 
 // Authentication tests
