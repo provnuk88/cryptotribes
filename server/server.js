@@ -3,7 +3,9 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const bcrypt = require('bcryptjs');
-const { initDatabase, db } = require('./database');
+const mongoose = require('mongoose');
+require('../db');
+const User = require('../models/User');
 const gameLogic = require('./gameLogic');
 const { logger, httpLogger, gameLogger, performance } = require('./logger');
 const { 
@@ -60,8 +62,7 @@ app.use(session({
     }
 }));
 
-// Инициализация базы данных
-initDatabase();
+
 
 // Middleware для проверки авторизации
 function requireAuth(req, res, next) {
@@ -90,42 +91,23 @@ app.post('/api/register', async (req, res) => {
     }
     
     try {
-        // Проверка существующего пользователя
-        const existingUser = await new Promise((resolve, reject) => {
-            db.get('SELECT id FROM users WHERE username = ?', [username], (err, row) => {
-                if (err) reject(err);
-                else resolve(row);
-            });
-        });
-        
+        const existingUser = await User.findOne({ username }).exec();
         if (existingUser) {
             return res.status(400).json({ error: 'Пользователь уже существует' });
         }
-        
-        // Хеширование пароля
+
         const hashedPassword = await bcrypt.hash(password, 10);
-        
-        // Создание пользователя
-        const userId = await new Promise((resolve, reject) => {
-            db.run(
-                'INSERT INTO users (username, password) VALUES (?, ?)',
-                [username, hashedPassword],
-                function(err) {
-                    if (err) reject(err);
-                    else resolve(this.lastID);
-                }
-            );
-        });
-        
-        // Создание первой деревни
-        await gameLogic.createVillage(userId, username + "'s Village");
-        
-        req.session.userId = userId;
+
+        const user = await User.create({ username, password: hashedPassword });
+
+        await gameLogic.createVillage(user._id, `${username}'s Village`);
+
+        req.session.userId = user._id.toString();
         req.session.username = username;
         req.session.csrfToken = require('crypto').randomBytes(32).toString('hex');
-        
-        gameLogger.userRegistered(username, userId);
-        
+
+        gameLogger.userRegistered(username, user._id.toString());
+
         res.json({ success: true, username, csrfToken: req.session.csrfToken });
     } catch (error) {
         logger.error('Ошибка регистрации:', error);
@@ -136,20 +118,15 @@ app.post('/api/register', async (req, res) => {
 // Вход
 app.post('/api/login', bruteForceProtection, async (req, res) => {
     const { username, password } = req.body;
-    
+
     try {
-        const user = await new Promise((resolve, reject) => {
-            db.get('SELECT * FROM users WHERE username = ?', [username], (err, row) => {
-                if (err) reject(err);
-                else resolve(row);
-            });
-        });
+        const user = await User.findOne({ username }).exec();
         
         if (!user) {
             incrementLoginAttempts(req.bruteForceKey, req.bruteForceAttempts);
             return res.status(400).json({ error: 'Неверный логин или пароль' });
         }
-        
+
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) {
             incrementLoginAttempts(req.bruteForceKey, req.bruteForceAttempts);
@@ -157,13 +134,16 @@ app.post('/api/login', bruteForceProtection, async (req, res) => {
         }
         
         resetLoginAttempts(req.bruteForceKey);
-        
-        req.session.userId = user.id;
+
+        req.session.userId = user._id.toString();
         req.session.username = user.username;
         req.session.csrfToken = require('crypto').randomBytes(32).toString('hex');
-        
-        gameLogger.userLogin(user.username, user.id);
-        
+
+        user.last_login = new Date();
+        await user.save();
+
+        gameLogger.userLogin(user.username, user._id.toString());
+
         res.json({ success: true, username: user.username, csrfToken: req.session.csrfToken });
     } catch (error) {
         logger.error('Ошибка входа:', error);
@@ -180,16 +160,9 @@ app.post('/api/logout', (req, res) => {
 // Текущий пользователь
 app.get('/api/user', requireAuth, async (req, res) => {
     try {
-        const user = await new Promise((resolve, reject) => {
-            db.get('SELECT id, username, crystals, tribe_id FROM users WHERE id = ?', 
-                [req.session.userId], (err, row) => {
-                if (err) reject(err);
-                else resolve(row);
-            });
-        });
-        
-        res.json({ 
-            userId: user.id,
+        const user = await User.findById(req.session.userId).lean();
+        res.json({
+            userId: user._id.toString(),
             username: user.username,
             crystals: user.crystals,
             tribeId: user.tribe_id,
@@ -353,12 +326,7 @@ app.post('/api/shop/create-payment', requireAuth, async (req, res) => {
         
         let result;
         if (method === 'card') {
-            const user = await new Promise((resolve, reject) => {
-                db.get('SELECT email FROM users WHERE id = ?', [req.session.userId], (err, row) => {
-                    if (err) reject(err);
-                    else resolve(row);
-                });
-            });
+            const user = await User.findById(req.session.userId).lean();
             result = await createStripePayment(req.session.userId, packageId, user?.email);
         } else if (method === 'crypto') {
             result = await createCryptoPayment(req.session.userId, packageId, currency || 'USDT');
@@ -519,12 +487,11 @@ const server = app.listen(PORT, () => {
 // Graceful shutdown
 process.on('SIGTERM', () => {
     logger.info('SIGTERM received, shutting down gracefully');
-    server.close(() => {
+    server.close(async () => {
         logger.info('Server closed');
-        db.close(() => {
-            logger.info('Database connection closed');
-            process.exit(0);
-        });
+        await mongoose.connection.close();
+        logger.info('Database connection closed');
+        process.exit(0);
     });
 });
 
