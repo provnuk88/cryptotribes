@@ -31,7 +31,8 @@
     "hpp": "^0.2.3",
     "mongoose": "^6.9.0",
     "winston": "^3.10.0",
-    "xss-clean": "^0.1.4"
+    "xss-clean": "^0.1.4",
+    "lru-cache": "^10.0.0"
   },
   "devDependencies": {
     "@jest/globals": "^29.6.4",

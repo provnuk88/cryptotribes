@@ -3,6 +3,8 @@ const Building = require('../models/Building');
 const Troop = require('../models/Troop');
 const TrainingQueue = require('../models/TrainingQueue');
 const User = require('../models/User');
+const LRU = require('lru-cache');
+const mapCache = new LRU({ max: 1, ttl: 60000 });
 
 // Game constants
 const BUILDING_TYPES = {
@@ -79,6 +81,7 @@ async function createVillage(userId, name) {
 
     const troops = Object.keys(TROOP_TYPES).map(t => ({ village_id: village._id, troop_type: t, amount: 0 }));
     await Troop.insertMany(troops);
+    mapCache.delete('world');
 
     return village._id;
 }
@@ -212,8 +215,12 @@ async function trainTroops(userId, villageId, troopType, amount) {
 }
 
 async function getWorldMap() {
+    const cached = mapCache.get('world');
+    if (cached) return cached;
     const villages = await Village.find().populate('user_id', 'username').lean();
-    return villages.map(v => ({ id: v._id.toString(), name: v.name, owner: v.user_id.username, x: v.x, y: v.y, points: v.points }));
+    const map = villages.map(v => ({ id: v._id.toString(), name: v.name, owner: v.user_id.username, x: v.x, y: v.y, points: v.points }));
+    mapCache.set('world', map);
+    return map;
 }
 
 async function attackVillage(userId, fromVillageId, toVillageId) {
@@ -237,6 +244,7 @@ async function processConstructionQueue() {
     for (const b of list) {
         await Building.updateOne({ _id: b._id }, { $inc: { level: 1 }, is_upgrading: false, upgrade_finish_time: null });
         await Village.updateOne({ _id: b.village_id }, { $inc: { points: b.level * 10 } });
+        mapCache.delete('world');
     }
 }
 
