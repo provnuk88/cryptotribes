@@ -458,14 +458,16 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Запуск сервера
-const server = app.listen(PORT, () => {
-    console.log(`
+let server; // for graceful shutdown and tests
+
+function startServer(port = PORT) {
+    server = app.listen(port, () => {
+        console.log(`
     ╔═══════════════════════════════════════╗
     ║       CryptoTribes запущен!           ║
     ║                                       ║
     ║   🌐 Локальный адрес:                 ║
-    ║   http://localhost:${PORT}              ║
+    ║   http://localhost:${port}              ║
     ║                                       ║
     ║   📊 Окружение: ${process.env.NODE_ENV || 'development'}           ║
     ║   🔒 Безопасность: активна            ║
@@ -476,16 +478,23 @@ const server = app.listen(PORT, () => {
     ║   - Crypto: ${process.env.NOWPAYMENTS_ENABLED === 'true' ? '✅' : '❌'}                     ║
     ╚═══════════════════════════════════════╝
     `);
-    
-    logger.info('Server started', {
-        port: PORT,
-        environment: process.env.NODE_ENV || 'development',
-        nodeVersion: process.version
+
+        logger.info('Server started', {
+            port,
+            environment: process.env.NODE_ENV || 'development',
+            nodeVersion: process.version
+        });
     });
-});
+    return server;
+}
+
+if (require.main === module) {
+    startServer();
+}
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
+    if (!server) return;
     logger.info('SIGTERM received, shutting down gracefully');
     server.close(async () => {
         logger.info('Server closed');
@@ -495,4 +504,6 @@ process.on('SIGTERM', () => {
     });
 });
 
-module.exports = app; // Для тестов
+module.exports = app;
+module.exports.startServer = startServer;
+module.exports.server = server;
