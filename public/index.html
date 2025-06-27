@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryptoTribes - Стратегическая игра</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Экран входа/регистрации -->
+        <div id="auth-screen" class="screen active">
+            <div class="auth-container">
+                <h1>⚔️ CryptoTribes ⚔️</h1>
+                <p class="subtitle">Построй свою империю!</p>
+                
+                <div class="auth-tabs">
+                    <button class="tab-btn active" onclick="showAuthTab('login')">Вход</button>
+                    <button class="tab-btn" onclick="showAuthTab('register')">Регистрация</button>
+                </div>
+                
+                <form id="login-form" class="auth-form active">
+                    <input type="text" id="login-username" placeholder="Логин" required>
+                    <input type="password" id="login-password" placeholder="Пароль" required>
+                    <button type="submit" class="btn btn-primary">Войти</button>
+                </form>
+                
+                <form id="register-form" class="auth-form">
+                    <input type="text" id="register-username" placeholder="Логин (мин. 3 символа)" required>
+                    <input type="password" id="register-password" placeholder="Пароль (мин. 6 символов)" required>
+                    <button type="submit" class="btn btn-primary">Создать аккаунт</button>
+                </form>
+                
+                <div id="auth-error" class="error-message"></div>
+            </div>
+        </div>
+        
+        <!-- Главный игровой экран -->
+        <div id="game-screen" class="screen">
+            <!-- Верхняя панель -->
+            <header class="game-header">
+                <button class="mobile-menu-toggle" onclick="toggleMobileMenu()">☰</button>
+                <div class="user-info">
+                    <span id="username-display"></span>
+                    <span id="tribe-display"></span>
+                </div>
+                <div class="resources">
+                    <div class="resource">
+                        <span class="resource-icon">🌳</span>
+                        <span id="wood-amount">0</span>
+                        <span class="production" id="wood-production">+0/ч</span>
+                    </div>
+                    <div class="resource">
+                        <span class="resource-icon">🧱</span>
+                        <span id="clay-amount">0</span>
+                        <span class="production" id="clay-production">+0/ч</span>
+                    </div>
+                    <div class="resource">
+                        <span class="resource-icon">⚔️</span>
+                        <span id="iron-amount">0</span>
+                        <span class="production" id="iron-production">+0/ч</span>
+                    </div>
+                    <div class="resource">
+                        <span class="resource-icon">🌾</span>
+                        <span id="food-amount">0</span>
+                        <span class="production" id="food-production">+0/ч</span>
+                    </div>
+                    <div class="resource premium">
+                        <span class="resource-icon">💎</span>
+                        <span id="crystals-amount">0</span>
+                    </div>
+                </div>
+                <button class="btn btn-logout" onclick="logout()">Выход</button>
+            </header>
+            
+            <!-- Навигация -->
+            <nav class="game-nav">
+                <button class="nav-btn active" onclick="showGameTab('village')">🏘️ Деревня</button>
+                <button class="nav-btn" onclick="showGameTab('barracks')">⚔️ Казармы</button>
+                <button class="nav-btn" onclick="showGameTab('map')">🗺️ Карта</button>
+                <button class="nav-btn" onclick="showGameTab('tribe')">🛡️ Племя</button>
+                <button class="nav-btn" onclick="showGameTab('reports')">📜 Отчеты</button>
+                <button class="nav-btn" onclick="showGameTab('shop')">💎 Магазин</button>
+            </nav>
+            
+            <!-- Контент -->
+            <main class="game-content">
+                <!-- Вкладка деревни -->
+                <div id="village-tab" class="game-tab active">
+                    <h2>Ваша деревня: <span id="village-name"></span></h2>
+                    <div class="buildings-grid" id="buildings-grid">
+                        <!-- Здания будут добавлены через JS -->
+                    </div>
+                </div>
+                
+                <!-- Вкладка казарм -->
+                <div id="barracks-tab" class="game-tab">
+                    <h2>Казармы</h2>
+                    <div class="troops-container">
+                        <h3>Ваши войска</h3>
+                        <div id="troops-list" class="troops-list">
+                            <!-- Войска будут добавлены через JS -->
+                        </div>
+                        
+                        <h3>Обучить войска</h3>
+                        <div id="train-troops" class="train-troops">
+                            <!-- Формы обучения будут добавлены через JS -->
+                        </div>
+                        
+                        <h3>Очередь обучения</h3>
+                        <div id="training-queue" class="training-queue">
+                            <!-- Очередь будет добавлена через JS -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Вкладка карты -->
+                <div id="map-tab" class="game-tab">
+                    <h2>Карта мира</h2>
+                    <div class="map-container">
+                        <div id="world-map" class="world-map">
+                            <!-- Карта будет добавлена через JS -->
+                        </div>
+                        <div id="map-info" class="map-info">
+                            <h3>Информация о деревне</h3>
+                            <div id="selected-village-info">
+                                Выберите деревню на карте
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Вкладка племени -->
+                <div id="tribe-tab" class="game-tab">
+                    <h2>Племена</h2>
+                    <div id="tribe-content">
+                        <!-- Контент племени будет добавлен через JS -->
+                    </div>
+                </div>
+                
+                <!-- Вкладка отчетов -->
+                <div id="reports-tab" class="game-tab">
+                    <h2>Отчеты</h2>
+                    <div id="reports-list">
+                        <!-- Отчеты будут добавлены через JS -->
+                    </div>
+                </div>
+                
+                <!-- Вкладка магазина -->
+                <div id="shop-tab" class="game-tab">
+                    <h2>Магазин кристаллов</h2>
+                    <div class="shop-container">
+                        <div class="shop-item">
+                            <h3>100 💎</h3>
+                            <p>Стартовый набор</p>
+                            <button class="btn btn-primary" onclick="buyCrystals(100)">Купить за $4.99</button>
+                        </div>
+                        <div class="shop-item">
+                            <h3>500 💎</h3>
+                            <p>Популярный выбор</p>
+                            <button class="btn btn-primary" onclick="buyCrystals(500)">Купить за $19.99</button>
+                        </div>
+                        <div class="shop-item">
+                            <h3>1200 💎</h3>
+                            <p>Лучшее предложение!</p>
+                            <button class="btn btn-primary" onclick="buyCrystals(1200)">Купить за $39.99</button>
+                        </div>
+                        <p class="shop-note">* Функция покупки будет доступна в следующем обновлении</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+        
+        <!-- Модальные окна -->
+        <div id="modal-overlay" class="modal-overlay" onclick="closeModal()"></div>
+        
+        <!-- Модальное окно строительства -->
+        <div id="building-modal" class="modal">
+            <div class="modal-header">
+                <h3 id="building-modal-title">Здание</h3>
+                <button class="modal-close" onclick="closeModal()">×</button>
+            </div>
+            <div class="modal-content" id="building-modal-content">
+                <!-- Контент будет добавлен через JS -->
+            </div>
+        </div>
+        
+        <!-- Модальное окно атаки -->
+        <div id="attack-modal" class="modal">
+            <div class="modal-header">
+                <h3>Организовать атаку</h3>
+                <button class="modal-close" onclick="closeModal()">×</button>
+            </div>
+            <div class="modal-content">
+                <h4>Цель: <span id="attack-target-name"></span></h4>
+                <p>Владелец: <span id="attack-target-owner"></span></p>
+                <p>Расстояние: <span id="attack-distance"></span> полей</p>
+                <p>Время в пути: <span id="attack-travel-time"></span> минут</p>
+                
+                <h4>Выберите войска:</h4>
+                <div id="attack-troops-selection">
+                    <!-- Выбор войск будет добавлен через JS -->
+                </div>
+                
+                <button class="btn btn-danger" onclick="sendAttack()">Атаковать!</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="game.js"></script>
+</body>
+</html>
