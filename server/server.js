@@ -35,6 +35,7 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, '../public')));
 
 // Безопасность
@@ -192,7 +193,7 @@ app.get('/api/village/:id?', requireAuth, async (req, res) => {
 
         res.json({ ...updatedVillage, id: updatedVillage._id.toString() });
     } catch (error) {
-        console.error('Ошибка получения деревни:', error);
+        logger.error('Ошибка получения деревни:', error);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
@@ -200,10 +201,11 @@ app.get('/api/village/:id?', requireAuth, async (req, res) => {
 // Получить список зданий
 app.get('/api/buildings/:villageId', requireAuth, async (req, res) => {
     try {
-        const buildings = await gameLogic.getBuildings(req.params.villageId);
-        res.json(buildings);
+        const { villageId } = req.params;
+        const buildings = await gameLogic.getBuildings(villageId);
+        res.status(200).json(buildings);
     } catch (error) {
-        console.error('Ошибка получения зданий:', error);
+        logger.error('Ошибка получения зданий:', error);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
@@ -213,10 +215,15 @@ app.post('/api/build', requireAuth, async (req, res) => {
     const { villageId, buildingType } = req.body;
     
     try {
+codex/починить-ветку-codex-test-backend-cryptotribes
+        const result = await gameLogic.upgradeBuilding(req.session.userId, villageId, buildingType);
+        res.status(200).json(result);
+
         const result = await gameLogic.upgradeBuilding(req.userIdObject, villageId, buildingType);
         res.json(result);
+ codex-test
     } catch (error) {
-        console.error('Ошибка строительства:', error);
+        logger.error('Ошибка строительства:', error);
         res.status(400).json({ error: error.message });
     }
 });
@@ -224,10 +231,11 @@ app.post('/api/build', requireAuth, async (req, res) => {
 // Получить список войск
 app.get('/api/troops/:villageId', requireAuth, async (req, res) => {
     try {
-        const troops = await gameLogic.getTroops(req.params.villageId);
-        res.json(troops);
+        const { villageId } = req.params;
+        const troops = await gameLogic.getTroops(villageId);
+        res.status(200).json(troops);
     } catch (error) {
-        console.error('Ошибка получения войск:', error);
+        logger.error('Ошибка получения войск:', error);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
@@ -237,10 +245,15 @@ app.post('/api/train', requireAuth, async (req, res) => {
     const { villageId, troopType, amount } = req.body;
     
     try {
+ codex/починить-ветку-codex-test-backend-cryptotribes
+        const result = await gameLogic.trainTroops(req.session.userId, villageId, troopType, amount);
+        res.status(200).json(result);
+
         const result = await gameLogic.trainTroops(req.userIdObject, villageId, troopType, amount);
         res.json(result);
+codex-test
     } catch (error) {
-        console.error('Ошибка обучения войск:', error);
+        logger.error('Ошибка обучения войск:', error);
         res.status(400).json({ error: error.message });
     }
 });
@@ -249,9 +262,9 @@ app.post('/api/train', requireAuth, async (req, res) => {
 app.get('/api/map', requireAuth, async (req, res) => {
     try {
         const map = await gameLogic.getWorldMap();
-        res.json(map);
+        res.status(200).json(map);
     } catch (error) {
-        console.error('Ошибка получения карты:', error);
+        logger.error('Ошибка получения карты:', error);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
@@ -261,10 +274,15 @@ app.post('/api/attack', requireAuth, async (req, res) => {
     const { fromVillageId, toVillageId, troops } = req.body;
     
     try {
+codex/починить-ветку-codex-test-backend-cryptotribes
+        const result = await gameLogic.attackVillage(req.session.userId, fromVillageId, toVillageId, troops);
+        res.status(200).json(result);
+
         const result = await gameLogic.attackVillage(req.userIdObject, fromVillageId, toVillageId, troops);
         res.json(result);
+ codex-test
     } catch (error) {
-        console.error('Ошибка атаки:', error);
+        logger.error('Ошибка атаки:', error);
         res.status(400).json({ error: error.message });
     }
 });
@@ -276,10 +294,15 @@ app.post('/api/tribe/create', requireAuth, async (req, res) => {
     const { name, tag } = req.body;
     
     try {
+ codex/починить-ветку-codex-test-backend-cryptotribes
+        const result = await gameLogic.createTribe(req.session.userId, name, tag);
+        res.status(200).json(result);
+
         const result = await gameLogic.createTribe(req.userIdObject, name, tag);
         res.json(result);
+ codex-test
     } catch (error) {
-        console.error('Ошибка создания племени:', error);
+        logger.error('Ошибка создания племени:', error);
         res.status(400).json({ error: error.message });
     }
 });
@@ -288,9 +311,9 @@ app.post('/api/tribe/create', requireAuth, async (req, res) => {
 app.get('/api/tribes', requireAuth, async (req, res) => {
     try {
         const tribes = await gameLogic.getTribes();
-        res.json(tribes);
+        res.status(200).json(tribes);
     } catch (error) {
-        console.error('Ошибка получения племен:', error);
+        logger.error('Ошибка получения племен:', error);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
@@ -300,10 +323,15 @@ app.post('/api/tribe/join', requireAuth, async (req, res) => {
     const { tribeId } = req.body;
     
     try {
+ codex/починить-ветку-codex-test-backend-cryptotribes
+        const result = await gameLogic.joinTribe(req.session.userId, tribeId);
+        res.status(200).json(result);
+
         const result = await gameLogic.joinTribe(req.userIdObject, tribeId);
         res.json(result);
+ codex-test
     } catch (error) {
-        console.error('Ошибка присоединения к племени:', error);
+        logger.error('Ошибка присоединения к племени:', error);
         res.status(400).json({ error: error.message });
     }
 });
@@ -392,10 +420,15 @@ app.post('/api/speed-up', requireAuth, async (req, res) => {
     const { actionId, type } = req.body;
     
     try {
+ codex/починить-ветку-codex-test-backend-cryptotribes
+        const result = await gameLogic.speedUpAction(req.session.userId, actionId, type);
+        res.status(200).json(result);
+
         const result = await gameLogic.speedUpAction(req.userIdObject, actionId, type);
         res.json(result);
+ codex-test
     } catch (error) {
-        console.error('Ошибка ускорения:', error);
+        logger.error('Ошибка ускорения:', error);
         res.status(400).json({ error: error.message });
     }
 });
