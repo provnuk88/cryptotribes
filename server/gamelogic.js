@@ -4,6 +4,8 @@ const Building = require('../models/Building');
 const Troop = require('../models/Troop');
 const TrainingQueue = require('../models/TrainingQueue');
 const User = require('../models/User');
+const { withTransaction } = require('./utils/dbTransactions');
+const { logger, gameLogger } = require('./logger');
 
 // Game constants
 const BUILDING_TYPES = {
@@ -196,32 +198,74 @@ function isValidObjectId(id) {
 }
 
 async function upgradeBuilding(userId, villageId, buildingType) {
-    if (!isValidObjectId(villageId)) throw new Error('Некорректный villageId');
-    const vid = new mongoose.Types.ObjectId(villageId);
-    const village = await getVillage(userId, vid);
-    if (!village) throw new Error('Деревня не найдена');
-    const updated = await updateVillageResources(village);
-    const building = await Building.findOne({ village_id: vid, building_type: buildingType });
-    if (!building) throw new Error('Здание не найдено');
-    if (building.is_upgrading) throw new Error('Здание уже улучшается');
-    if (building.level >= 20) throw new Error('Достигнут максимальный уровень здания');
-    if (buildingType !== 'tribal_hall') {
-        const tribalHall = await Building.findOne({ village_id: vid, building_type: 'tribal_hall' });
-        if (building.level >= tribalHall.level) {
-            throw new Error('Сначала улучшите Tribal Hall');
+    return withTransaction(async (session) => {
+        if (!isValidObjectId(villageId)) throw new Error('Некорректный villageId');
+        const vid = new mongoose.Types.ObjectId(villageId);
+        
+        // Все операции с { session }
+        const village = await Village.findOne({ _id: vid, user_id: userId }).session(session);
+        if (!village) throw new Error('Деревня не найдена');
+        
+        const updated = await updateVillageResources(village);
+        const building = await Building.findOne({ 
+            village_id: vid, 
+            building_type: buildingType 
+        }).session(session);
+        
+        if (!building) throw new Error('Здание не найдено');
+        if (building.is_upgrading) throw new Error('Здание уже улучшается');
+        if (building.level >= 20) throw new Error('Достигнут максимальный уровень здания');
+        
+        if (buildingType !== 'tribal_hall') {
+            const tribalHall = await Building.findOne({ 
+                village_id: vid, 
+                building_type: 'tribal_hall' 
+            }).session(session);
+            
+            if (building.level >= tribalHall.level) {
+                throw new Error('Сначала улучшите Tribal Hall');
+            }
         }
-    }
-    const cost = calculateBuildingCost(buildingType, building.level);
-    if (updated.wood < cost.wood || updated.clay < cost.clay || updated.iron < cost.iron || updated.food < cost.food) {
-        throw new Error('Недостаточно ресурсов');
-    }
-    await Village.updateOne({ _id: vid }, {
-        $inc: { wood: -cost.wood, clay: -cost.clay, iron: -cost.iron, food: -cost.food }
+        
+        const cost = calculateBuildingCost(buildingType, building.level);
+        if (updated.wood < cost.wood || updated.clay < cost.clay || 
+            updated.iron < cost.iron || updated.food < cost.food) {
+            throw new Error('Недостаточно ресурсов');
+        }
+        
+        // Обновляем ресурсы
+        await Village.updateOne(
+            { _id: vid },
+            {
+                $inc: { 
+                    wood: -cost.wood, 
+                    clay: -cost.clay, 
+                    iron: -cost.iron, 
+                    food: -cost.food 
+                }
+            },
+            { session }
+        );
+        
+        const buildTime = calculateBuildTime(buildingType, building.level + 1);
+        const finishTime = new Date(Date.now() + buildTime * 60000);
+        
+        // Начинаем улучшение
+        await Building.updateOne(
+            { _id: building._id }, 
+            { 
+                is_upgrading: true, 
+                upgrade_finish_time: finishTime 
+            },
+            { session }
+        );
+        
+        return { 
+            success: true, 
+            finishTime: finishTime.toISOString(), 
+            buildTime 
+        };
     });
-    const buildTime = calculateBuildTime(buildingType, building.level + 1);
-    const finishTime = new Date(Date.now() + buildTime * 60000);
-    await Building.updateOne({ _id: building._id }, { is_upgrading: true, upgrade_finish_time: finishTime });
-    return { success: true, finishTime: finishTime.toISOString(), buildTime };
 }
 
 async function getTroops(villageId) {
@@ -353,47 +397,188 @@ async function attackVillage(userId, fromVillageId, toVillageId, troopsSent) {
 }
 
 async function updateAllVillagesResources() {
+    const startTime = Date.now();
+    const BATCH_SIZE = 50; // Обрабатываем по 50 деревень за раз
+    
     try {
-        console.log('Начинаем обновление ресурсов всех деревень...');
-        const villages = await Village.find().lean();
-        console.log(`Найдено ${villages.length} деревень для обновления`);
+        logger.info('Starting batch resource update...');
+        
+        // Считаем общее количество деревень
+        const totalCount = await Village.countDocuments();
+        logger.info(`Total villages to update: ${totalCount}`);
         
         let updatedCount = 0;
         let errorCount = 0;
+        let skip = 0;
         
-        for (const village of villages) {
-            try {
-                await updateVillageResources(village);
-                updatedCount++;
-            } catch (error) {
-                console.error(`Ошибка обновления ресурсов для деревни ${village._id}:`, error);
-                errorCount++;
+        // Обрабатываем батчами
+        while (skip < totalCount) {
+            const villages = await Village.find()
+                .skip(skip)
+                .limit(BATCH_SIZE)
+                .lean();
+            
+            if (villages.length === 0) break;
+            
+            // Параллельная обработка батча с ограничением
+            const updatePromises = villages.map(village => 
+                updateVillageResources(village)
+                    .then(() => {
+                        updatedCount++;
+                    })
+                    .catch(error => {
+                        logger.error(`Failed to update village ${village._id}:`, error);
+                        errorCount++;
+                    })
+            );
+            
+            // Ждем завершения текущего батча
+            await Promise.all(updatePromises);
+            
+            skip += BATCH_SIZE;
+            
+            // Логируем прогресс каждые 200 деревень
+            if (updatedCount % 200 === 0 && updatedCount > 0) {
+                logger.info(`Resource update progress: ${updatedCount}/${totalCount}`);
+            }
+            
+            // Даем GC время на очистку памяти между батчами
+            if (global.gc) {
+                global.gc();
             }
         }
         
-        console.log(`Обновление завершено: ${updatedCount} успешно, ${errorCount} с ошибками`);
-        return { updatedCount, errorCount };
+        const duration = Date.now() - startTime;
+        
+        logger.info('Resource update completed', {
+            totalCount,
+            updatedCount,
+            errorCount,
+            duration,
+            avgTimePerVillage: totalCount > 0 ? (duration / totalCount).toFixed(2) : 0
+        });
+        
+        gameLogger.resourcesUpdated(updatedCount, duration);
+        
+        return { updatedCount, errorCount, duration };
+        
     } catch (error) {
-        console.error('Критическая ошибка при обновлении ресурсов всех деревень:', error);
+        logger.error('Critical error in batch resource update:', error);
         throw error;
     }
 }
 
 async function processConstructionQueue() {
+    const BATCH_SIZE = 100;
     const now = new Date();
-    const list = await Building.find({ is_upgrading: true, upgrade_finish_time: { $lte: now } });
-    for (const b of list) {
-        await Building.updateOne({ _id: b._id }, { $inc: { level: 1 }, is_upgrading: false, upgrade_finish_time: null });
-        await Village.updateOne({ _id: b.village_id }, { $inc: { points: b.level * 10 } });
+    
+    try {
+        let processed = 0;
+        let skip = 0;
+        
+        while (true) {
+            const buildings = await Building.find({ 
+                is_upgrading: true, 
+                upgrade_finish_time: { $lte: now } 
+            })
+            .skip(skip)
+            .limit(BATCH_SIZE)
+            .lean();
+            
+            if (buildings.length === 0) break;
+            
+            // Обрабатываем батч
+            for (const building of buildings) {
+                try {
+                    await Building.updateOne(
+                        { _id: building._id }, 
+                        { 
+                            $inc: { level: 1 }, 
+                            is_upgrading: false, 
+                            upgrade_finish_time: null 
+                        }
+                    );
+                    
+                    await Village.updateOne(
+                        { _id: building.village_id }, 
+                        { $inc: { points: building.level * 10 } }
+                    );
+                    
+                    processed++;
+                } catch (error) {
+                    logger.error(`Failed to process building ${building._id}:`, error);
+                }
+            }
+            
+            skip += BATCH_SIZE;
+        }
+        
+        if (processed > 0) {
+            logger.info(`Processed ${processed} building upgrades`);
+        }
+        
+    } catch (error) {
+        logger.error('Error in construction queue processing:', error);
     }
 }
 
 async function processTrainingQueue() {
+    const BATCH_SIZE = 100;
     const now = new Date();
-    const list = await TrainingQueue.find({ finish_time: { $lte: now } });
-    for (const t of list) {
-        await Troop.updateOne({ village_id: t.village_id, troop_type: t.troop_type }, { $inc: { amount: t.amount } });
-        await TrainingQueue.deleteOne({ _id: t._id });
+    
+    try {
+        let processed = 0;
+        let skip = 0;
+        
+        while (true) {
+            const trainings = await TrainingQueue.find({ 
+                finish_time: { $lte: now } 
+            })
+            .skip(skip)
+            .limit(BATCH_SIZE)
+            .lean();
+            
+            if (trainings.length === 0) break;
+            
+            // Группируем по деревням для оптимизации
+            const troopUpdates = {};
+            const trainingIds = [];
+            
+            for (const training of trainings) {
+                const key = `${training.village_id}_${training.troop_type}`;
+                troopUpdates[key] = (troopUpdates[key] || 0) + training.amount;
+                trainingIds.push(training._id);
+            }
+            
+            // Применяем обновления
+            for (const [key, amount] of Object.entries(troopUpdates)) {
+                const [villageId, troopType] = key.split('_');
+                
+                try {
+                    await Troop.updateOne(
+                        { village_id: villageId, troop_type: troopType }, 
+                        { $inc: { amount: amount } }
+                    );
+                    processed++;
+                } catch (error) {
+                    logger.error(`Failed to update troops for ${key}:`, error);
+                }
+            }
+            
+            // Удаляем обработанные записи
+            if (trainingIds.length > 0) {
+                await TrainingQueue.deleteMany({ _id: { $in: trainingIds } });
+            }
+            
+            skip += BATCH_SIZE;
+        }
+        
+        if (processed > 0) {
+            logger.info(`Processed ${processed} troop trainings`);
+        }
+        
+    } catch (error) {
+        logger.error('Error in training queue processing:', error);
     }
 }
 

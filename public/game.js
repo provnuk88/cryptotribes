@@ -711,20 +711,45 @@ function selectMapVillage(village) {
         Math.pow(village.y - currentVillage.y, 2)
     );
     
-    info.innerHTML = `
-        <div class="village-info-details">
-            <p><strong>Название:</strong> ${village.name}</p>
-            <p><strong>Владелец:</strong> ${village.owner}</p>
-            <p><strong>Координаты:</strong> (${village.x}, ${village.y})</p>
-            <p><strong>Очки:</strong> ${village.points || 0}</p>
-            <p><strong>Расстояние:</strong> ${distance.toFixed(1)} полей</p>
-            ${!isOwn ? `
-                <button class="btn btn-danger attack-btn" onclick="showAttackModal(${village.id})">
-                    Атаковать
-                </button>
-            ` : ''}
-        </div>
-    `;
+    // БЕЗОПАСНЫЙ способ - используем textContent и createElement
+    info.innerHTML = ''; // Очищаем
+    
+    const details = document.createElement('div');
+    details.className = 'village-info-details';
+    
+    // Создаем элементы безопасно
+    const nameP = document.createElement('p');
+    nameP.innerHTML = '<strong>Название:</strong> <span></span>';
+    nameP.querySelector('span').textContent = village.name; // textContent экранирует HTML
+    details.appendChild(nameP);
+    
+    const ownerP = document.createElement('p');
+    ownerP.innerHTML = '<strong>Владелец:</strong> <span></span>';
+    ownerP.querySelector('span').textContent = village.owner;
+    details.appendChild(ownerP);
+    
+    const coordsP = document.createElement('p');
+    coordsP.innerHTML = `<strong>Координаты:</strong> (${village.x}, ${village.y})`;
+    details.appendChild(coordsP);
+    
+    const pointsP = document.createElement('p');
+    pointsP.innerHTML = `<strong>Очки:</strong> ${village.points || 0}`;
+    details.appendChild(pointsP);
+    
+    const distanceP = document.createElement('p');
+    distanceP.innerHTML = `<strong>Расстояние:</strong> ${distance.toFixed(1)} полей`;
+    details.appendChild(distanceP);
+    
+    info.appendChild(details);
+    
+    // Добавляем кнопку атаки если нужно
+    if (!isOwn) {
+        const attackBtn = document.createElement('button');
+        attackBtn.className = 'btn btn-danger attack-btn';
+        attackBtn.textContent = 'Атаковать';
+        attackBtn.onclick = () => showAttackModal(village.id);
+        info.appendChild(attackBtn);
+    }
 }
 
 // Показать модальное окно атаки
@@ -849,69 +874,119 @@ async function loadTribe() {
         const tribes = await response.json();
         
         const content = document.getElementById('tribe-content');
+        content.innerHTML = ''; // Очищаем
         
         // TODO: Проверить, состоит ли игрок в племени
         const userTribe = null;
         
         if (userTribe) {
-            // Показываем информацию о племени игрока
-            content.innerHTML = `
-                <div class="tribe-info">
-                    <h3>${userTribe.name} [${userTribe.tag}]</h3>
-                    <p>Лидер: ${userTribe.leader_name}</p>
-                    <p>Участников: ${userTribe.member_count}</p>
-                    <p>Очки: ${userTribe.points}</p>
-                </div>
-                
-                <h3>Чат племени</h3>
-                <div class="tribe-chat">
-                    <!-- TODO: Реализовать чат -->
-                    <p>Чат будет доступен в следующем обновлении</p>
-                </div>
-            `;
+            // Безопасное создание контента для племени игрока
+            const tribeInfo = document.createElement('div');
+            tribeInfo.className = 'tribe-info';
+            
+            const title = document.createElement('h3');
+            title.textContent = `${userTribe.name} [${userTribe.tag}]`;
+            tribeInfo.appendChild(title);
+            
+            const leader = document.createElement('p');
+            leader.textContent = `Лидер: ${userTribe.leader_name}`;
+            tribeInfo.appendChild(leader);
+            
+            const members = document.createElement('p');
+            members.textContent = `Участников: ${userTribe.member_count}`;
+            tribeInfo.appendChild(members);
+            
+            const points = document.createElement('p');
+            points.textContent = `Очки: ${userTribe.points}`;
+            tribeInfo.appendChild(points);
+            
+            content.appendChild(tribeInfo);
+            
+            // Добавляем чат
+            const chatTitle = document.createElement('h3');
+            chatTitle.textContent = 'Чат племени';
+            content.appendChild(chatTitle);
+            
+            const chatDiv = document.createElement('div');
+            chatDiv.className = 'tribe-chat';
+            chatDiv.innerHTML = '<p>Чат будет доступен в следующем обновлении</p>';
+            content.appendChild(chatDiv);
+            
         } else {
             // Показываем список племен и форму создания
-            content.innerHTML = `
-                <div class="tribe-actions">
-                    <button class="btn btn-primary" onclick="showCreateTribeForm()">
-                        Создать племя (1000 каждого ресурса)
-                    </button>
+            const actions = document.createElement('div');
+            actions.className = 'tribe-actions';
+            
+            const createBtn = document.createElement('button');
+            createBtn.className = 'btn btn-primary';
+            createBtn.textContent = 'Создать племя (1000 каждого ресурса)';
+            createBtn.onclick = showCreateTribeForm;
+            actions.appendChild(createBtn);
+            
+            content.appendChild(actions);
+            
+            // Форма создания племени
+            const createForm = document.createElement('div');
+            createForm.id = 'create-tribe-form';
+            createForm.className = 'create-tribe-form';
+            createForm.style.display = 'none';
+            createForm.innerHTML = `
+                <h3>Создать новое племя</h3>
+                <div class="form-group">
+                    <label>Название племени:</label>
+                    <input type="text" id="tribe-name" maxlength="30" required>
                 </div>
-                
-                <div id="create-tribe-form" class="create-tribe-form" style="display: none;">
-                    <h3>Создать новое племя</h3>
-                    <div class="form-group">
-                        <label>Название племени:</label>
-                        <input type="text" id="tribe-name" maxlength="30" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Тег (до 5 символов):</label>
-                        <input type="text" id="tribe-tag" maxlength="5" required>
-                    </div>
-                    <button class="btn btn-primary" onclick="createTribe()">Создать</button>
-                    <button class="btn" onclick="hideCreateTribeForm()">Отмена</button>
+                <div class="form-group">
+                    <label>Тег (до 5 символов):</label>
+                    <input type="text" id="tribe-tag" maxlength="5" required>
                 </div>
-                
-                <h3>Существующие племена</h3>
-                <div class="tribes-list">
-                    ${tribes.map(tribe => `
-                        <div class="tribe-card">
-                            <div class="tribe-info">
-                                <h4>${tribe.name}</h4>
-                                <div class="tribe-tag">[${tribe.tag}]</div>
-                                <div class="tribe-stats">
-                                    Лидер: ${tribe.leader_name} | 
-                                    Участников: ${tribe.member_count} | 
-                                    Очки: ${tribe.points}
-                                </div>
-                            </div>
-                            <button class="btn" onclick="joinTribe(${tribe.id})">
-                                Присоединиться
-                            </button>
-                        </div>
-                    `).join('')}
-                </div>
+                <button class="btn btn-primary" onclick="createTribe()">Создать</button>
+                <button class="btn" onclick="hideCreateTribeForm()">Отмена</button>
             `;
+            content.appendChild(createForm);
+            
+            // Список существующих племен
+            const listTitle = document.createElement('h3');
+            listTitle.textContent = 'Существующие племена';
+            content.appendChild(listTitle);
+            
+            const tribesList = document.createElement('div');
+            tribesList.className = 'tribes-list';
+            
+            // Безопасное создание карточек племен
+            tribes.forEach(tribe => {
+                const card = document.createElement('div');
+                card.className = 'tribe-card';
+                
+                const info = document.createElement('div');
+                info.className = 'tribe-info';
+                
+                const name = document.createElement('h4');
+                name.textContent = tribe.name;
+                info.appendChild(name);
+                
+                const tag = document.createElement('div');
+                tag.className = 'tribe-tag';
+                tag.textContent = `[${tribe.tag}]`;
+                info.appendChild(tag);
+                
+                const stats = document.createElement('div');
+                stats.className = 'tribe-stats';
+                stats.textContent = `Лидер: ${tribe.leader_name} | Участников: ${tribe.member_count} | Очки: ${tribe.points}`;
+                info.appendChild(stats);
+                
+                card.appendChild(info);
+                
+                const joinBtn = document.createElement('button');
+                joinBtn.className = 'btn';
+                joinBtn.textContent = 'Присоединиться';
+                joinBtn.onclick = () => joinTribe(tribe.id);
+                card.appendChild(joinBtn);
+                
+                tribesList.appendChild(card);
+            });
+            
+            content.appendChild(tribesList);
         }
         
     } catch (error) {
@@ -1036,23 +1111,59 @@ async function selectPaymentMethod() {
 function showCryptoPaymentModal(paymentData) {
     const modal = document.createElement('div');
     modal.className = 'modal active';
-    modal.innerHTML = `
-        <div class="modal-header">
-            <h3>Оплата криптовалютой</h3>
-            <button class="modal-close" onclick="closeModal()">×</button>
-        </div>
-        <div class="modal-content">
-            <p><strong>Отправьте точную сумму:</strong></p>
-            <p class="crypto-amount">${paymentData.amount} ${paymentData.currency}</p>
-            <p><strong>На адрес:</strong></p>
-            <p class="crypto-address">${escapeHtml(paymentData.address)}</p>
-            <button class="btn" onclick="copyToClipboard('${escapeHtml(paymentData.address)}')">
-                📋 Скопировать адрес
-            </button>
-            <p class="warning">⚠️ Отправляйте только ${paymentData.currency}! Другие валюты будут потеряны.</p>
-            <p>После отправки платеж будет обработан автоматически в течение 10-30 минут.</p>
-        </div>
-    `;
+    
+    const header = document.createElement('div');
+    header.className = 'modal-header';
+    
+    const title = document.createElement('h3');
+    title.textContent = 'Оплата криптовалютой';
+    header.appendChild(title);
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'modal-close';
+    closeBtn.textContent = '×';
+    closeBtn.onclick = closeModal;
+    header.appendChild(closeBtn);
+    
+    modal.appendChild(header);
+    
+    const content = document.createElement('div');
+    content.className = 'modal-content';
+    
+    const amountP = document.createElement('p');
+    amountP.innerHTML = '<strong>Отправьте точную сумму:</strong>';
+    content.appendChild(amountP);
+    
+    const amountValue = document.createElement('p');
+    amountValue.className = 'crypto-amount';
+    amountValue.textContent = `${paymentData.amount} ${paymentData.currency}`;
+    content.appendChild(amountValue);
+    
+    const addressP = document.createElement('p');
+    addressP.innerHTML = '<strong>На адрес:</strong>';
+    content.appendChild(addressP);
+    
+    const addressValue = document.createElement('p');
+    addressValue.className = 'crypto-address';
+    addressValue.textContent = paymentData.address; // textContent безопасен
+    content.appendChild(addressValue);
+    
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn';
+    copyBtn.textContent = '📋 Скопировать адрес';
+    copyBtn.onclick = () => copyToClipboard(paymentData.address);
+    content.appendChild(copyBtn);
+    
+    const warning = document.createElement('p');
+    warning.className = 'warning';
+    warning.textContent = `⚠️ Отправляйте только ${paymentData.currency}! Другие валюты будут потеряны.`;
+    content.appendChild(warning);
+    
+    const info = document.createElement('p');
+    info.textContent = 'После отправки платеж будет обработан автоматически в течение 10-30 минут.';
+    content.appendChild(info);
+    
+    modal.appendChild(content);
     
     document.body.appendChild(modal);
     document.getElementById('modal-overlay').classList.add('active');

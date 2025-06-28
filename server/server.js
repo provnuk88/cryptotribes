@@ -20,6 +20,10 @@ const {
     resetLoginAttempts,
     validators 
 } = require('./securityMiddlewares');
+const { requireAdmin } = require('./middlewares/adminAuth');
+const { validateParamId, validateBodyIds } = require('./utils/validation');
+const { createIndexes } = require('./utils/createIndexes');
+const { performanceMonitor, setupMetricsEndpoint } = require('./utils/monitoring');
 const { 
     createStripePayment, 
     createCryptoPayment,
@@ -35,6 +39,20 @@ const userRoutes = require('./routes/userRoutes');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Создание индексов при подключении к MongoDB
+mongoose.connection.once('open', async () => {
+    logger.info('MongoDB connected');
+    
+    // Создаем индексы при запуске
+    if (process.env.NODE_ENV !== 'test') {
+        try {
+            await createIndexes();
+        } catch (error) {
+            logger.error('Failed to create indexes:', error);
+        }
+    }
+});
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -43,6 +61,9 @@ app.use(express.static(path.join(__dirname, '../public')));
 // Безопасность
 app.use(securityMiddleware);
 app.use(httpLogger);
+
+// Мониторинг производительности
+app.use(performanceMonitor.middleware());
 
 // Rate limiting
 app.use('/api/', generalLimiter);
@@ -247,55 +268,81 @@ app.get('/api/village/:id', requireAuth, async (req, res) => {
 });
 
 // Получить список зданий
-app.get('/api/buildings/:villageId', requireAuth, async (req, res) => {
-    try {
-        const { villageId } = req.params;
-        const buildings = await gameLogic.getBuildings(villageId);
-        res.status(200).json(buildings);
-    } catch (error) {
-        logger.error('Ошибка получения зданий:', error);
-        if (error.message && error.message.includes('villageId')) {
-            return res.status(400).json({ error: error.message });
+app.get('/api/buildings/:villageId', 
+    requireAuth, 
+    validateParamId('villageId'), 
+    async (req, res) => {
+        try {
+            const villageId = req.validatedParams.villageId;
+            const buildings = await gameLogic.getBuildings(villageId);
+            res.status(200).json(buildings);
+        } catch (error) {
+            logger.error('Ошибка получения зданий:', error);
+            res.status(500).json({ error: 'Ошибка сервера' });
         }
-        res.status(500).json({ error: 'Ошибка сервера' });
     }
-});
+);
 
 // Построить/улучшить здание
-app.post('/api/build', requireAuth, async (req, res) => {
-    const { villageId, buildingType } = req.body;
-    try {
-        const result = await gameLogic.upgradeBuilding(req.userIdObject, villageId, buildingType);
-        res.json(result);
-    } catch (error) {
-        logger.error('Ошибка строительства:', error);
-        res.status(400).json({ error: error.message });
+app.post('/api/build', 
+    requireAuth, 
+    validateBodyIds('villageId'), 
+    async (req, res) => {
+        const { buildingType } = req.body;
+        const villageId = req.validatedBody.villageId;
+        
+        try {
+            const result = await gameLogic.upgradeBuilding(
+                req.userIdObject, 
+                villageId, 
+                buildingType
+            );
+            res.json(result);
+        } catch (error) {
+            logger.error('Ошибка строительства:', error);
+            res.status(400).json({ error: error.message });
+        }
     }
-});
+);
 
 // Получить список войск
-app.get('/api/troops/:villageId', requireAuth, async (req, res) => {
-    try {
-        const { villageId } = req.params;
-        const troops = await gameLogic.getTroops(villageId);
-        res.status(200).json(troops);
-    } catch (error) {
-        logger.error('Ошибка получения войск:', error);
-        res.status(500).json({ error: 'Ошибка сервера' });
+app.get('/api/troops/:villageId', 
+    requireAuth, 
+    validateParamId('villageId'), 
+    async (req, res) => {
+        try {
+            const villageId = req.validatedParams.villageId;
+            const troops = await gameLogic.getTroops(villageId);
+            res.status(200).json(troops);
+        } catch (error) {
+            logger.error('Ошибка получения войск:', error);
+            res.status(500).json({ error: 'Ошибка сервера' });
+        }
     }
-});
+);
 
 // Обучить войска
-app.post('/api/train', requireAuth, async (req, res) => {
-    const { villageId, troopType, amount } = req.body;
-    try {
-        const result = await gameLogic.trainTroops(req.userIdObject, villageId, troopType, amount);
-        res.json(result);
-    } catch (error) {
-        logger.error('Ошибка обучения войск:', error);
-        res.status(400).json({ error: error.message });
+app.post('/api/train', 
+    requireAuth, 
+    validateBodyIds('villageId'), 
+    async (req, res) => {
+        const { troopType, amount } = req.body;
+        const villageId = req.validatedBody.villageId;
+        
+        try {
+            const result = await gameLogic.trainTroops(
+                req.userIdObject, 
+                villageId, 
+                troopType, 
+                amount
+            );
+            res.json(result);
+        } catch (error) {
+            logger.error('Ошибка обучения войск:', error);
+            res.status(400).json({ error: error.message });
+        }
     }
-});
+);
 
 // Получить карту мира
 app.get('/api/map', requireAuth, async (req, res) => {
@@ -309,16 +356,28 @@ app.get('/api/map', requireAuth, async (req, res) => {
 });
 
 // Атаковать деревню
-app.post('/api/attack', requireAuth, async (req, res) => {
-    const { fromVillageId, toVillageId, troops } = req.body;
-    try {
-        const result = await gameLogic.attackVillage(req.userIdObject, fromVillageId, toVillageId, troops);
-        res.json(result);
-    } catch (error) {
-        logger.error('Ошибка атаки:', error);
-        res.status(400).json({ error: error.message });
+app.post('/api/attack', 
+    requireAuth, 
+    validateBodyIds('fromVillageId', 'toVillageId'), 
+    async (req, res) => {
+        const { troops } = req.body;
+        const fromVillageId = req.validatedBody.fromVillageId;
+        const toVillageId = req.validatedBody.toVillageId;
+        
+        try {
+            const result = await gameLogic.attackVillage(
+                req.userIdObject, 
+                fromVillageId, 
+                toVillageId, 
+                troops
+            );
+            res.json(result);
+        } catch (error) {
+            logger.error('Ошибка атаки:', error);
+            res.status(400).json({ error: error.message });
+        }
     }
-});
+);
 
 // === ПЛЕМЕНА ===
 
@@ -420,16 +479,26 @@ app.post('/api/shop/promo', requireAuth, async (req, res) => {
 });
 
 // Административный эндпоинт для генерации варварских деревень
-app.post('/api/admin/generate-barbarians', requireAuth, async (req, res) => {
+app.post('/api/admin/generate-barbarians', requireAuth, requireAdmin, async (req, res) => {
     try {
-        // Проверяем, является ли пользователь админом (можно доработать по ролям)
-        const user = await User.findById(req.userIdObject).lean();
-        if (!user || user.username !== 'admin') {
-            return res.status(403).json({ error: 'Доступ запрещен' });
-        }
         const count = Number(req.body.count) || 10;
+        
+        if (count < 1 || count > 100) {
+            return res.status(400).json({ error: 'Количество должно быть от 1 до 100' });
+        }
+        
         const result = await gameLogic.generateBarbarianVillages(count);
-        res.json({ success: true, created: result.length });
+        
+        logger.info('Barbarian villages generated', {
+            admin: req.admin.username,
+            count: result.length
+        });
+        
+        res.json({ 
+            success: true, 
+            created: result.length,
+            message: `Создано ${result.length} варварских деревень`
+        });
     } catch (error) {
         logger.error('Ошибка генерации варварских деревень:', error);
         res.status(500).json({ error: 'Ошибка сервера' });
@@ -475,6 +544,9 @@ app.get('/health', (req, res) => {
         version: '1.0.0'
     });
 });
+
+// Настройка эндпоинта метрик
+setupMetricsEndpoint(app);
 
 // 404 handler
 app.use((req, res) => {
