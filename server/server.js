@@ -5,7 +5,7 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const MongoStore = require('connect-mongo');
-require('../db');
+const { connectToMongoDB } = require('./utils/dbConnection');
 const User = require('../models/User');
 const gameLogic = require('./gameLogic');
 const { logger, httpLogger, gameLogger, performance } = require('./logger');
@@ -39,19 +39,19 @@ const userRoutes = require('./routes/userRoutes');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Создание индексов при подключении к MongoDB
-mongoose.connection.once('open', async () => {
-    logger.info('MongoDB connected');
-    
-    // Создаем индексы при запуске
-    if (process.env.NODE_ENV !== 'test') {
-        try {
-            await createIndexes();
-        } catch (error) {
+// Подключаемся к MongoDB только если не в тестовом режиме
+if (process.env.NODE_ENV !== 'test') {
+    connectToMongoDB().then(() => {
+        logger.info('MongoDB connected');
+        
+        // Создаем индексы при запуске
+        createIndexes().catch(error => {
             logger.error('Failed to create indexes:', error);
-        }
-    }
-});
+        });
+    }).catch(error => {
+        logger.error('Failed to connect to MongoDB:', error);
+    });
+}
 
 // Middleware
 app.use(express.json());
@@ -80,7 +80,7 @@ app.use(session({
     secret: process.env.SESSION_SECRET || 'cryptotribes-secret-key-change-in-production',
     resave: false,
     saveUninitialized: false,
-    cookie: {
+    cookie: { 
         maxAge: 24 * 60 * 60 * 1000, // 24 часа
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -272,14 +272,14 @@ app.get('/api/buildings/:villageId',
     requireAuth, 
     validateParamId('villageId'), 
     async (req, res) => {
-        try {
+    try {
             const villageId = req.validatedParams.villageId;
-            const buildings = await gameLogic.getBuildings(villageId);
-            res.status(200).json(buildings);
-        } catch (error) {
-            logger.error('Ошибка получения зданий:', error);
-            res.status(500).json({ error: 'Ошибка сервера' });
-        }
+        const buildings = await gameLogic.getBuildings(villageId);
+        res.status(200).json(buildings);
+    } catch (error) {
+        logger.error('Ошибка получения зданий:', error);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
     }
 );
 
@@ -305,19 +305,32 @@ app.post('/api/build',
     }
 );
 
+// Ускорить строительство/обучение
+app.post('/api/speed-up', requireAuth, async (req, res) => {
+    const { actionId, type } = req.body;
+
+    try {
+        const result = await gameLogic.speedUpAction(req.userIdObject, actionId, type);
+        res.json(result);
+    } catch (error) {
+        logger.error('Ошибка ускорения:', error);
+        res.status(400).json({ error: error.message });
+    }
+});
+
 // Получить список войск
 app.get('/api/troops/:villageId', 
     requireAuth, 
     validateParamId('villageId'), 
     async (req, res) => {
-        try {
+    try {
             const villageId = req.validatedParams.villageId;
-            const troops = await gameLogic.getTroops(villageId);
-            res.status(200).json(troops);
-        } catch (error) {
-            logger.error('Ошибка получения войск:', error);
-            res.status(500).json({ error: 'Ошибка сервера' });
-        }
+        const troops = await gameLogic.getTroops(villageId);
+        res.status(200).json(troops);
+    } catch (error) {
+        logger.error('Ошибка получения войск:', error);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
     }
 );
 
@@ -336,10 +349,26 @@ app.post('/api/train',
                 troopType, 
                 amount
             );
-            res.json(result);
+        res.json(result);
+    } catch (error) {
+        logger.error('Ошибка обучения войск:', error);
+        res.status(400).json({ error: error.message });
+    }
+    }
+);
+
+// Получить очередь обучения
+app.get('/api/training-queue/:villageId', 
+    requireAuth, 
+    validateParamId('villageId'), 
+    async (req, res) => {
+        try {
+            const villageId = req.validatedParams.villageId;
+            const queue = await gameLogic.getTrainingQueue(villageId);
+            res.status(200).json(queue);
         } catch (error) {
-            logger.error('Ошибка обучения войск:', error);
-            res.status(400).json({ error: error.message });
+            logger.error('Ошибка получения очереди обучения:', error);
+            res.status(500).json({ error: 'Ошибка сервера' });
         }
     }
 );
@@ -371,11 +400,11 @@ app.post('/api/attack',
                 toVillageId, 
                 troops
             );
-            res.json(result);
-        } catch (error) {
-            logger.error('Ошибка атаки:', error);
-            res.status(400).json({ error: error.message });
-        }
+        res.json(result);
+    } catch (error) {
+        logger.error('Ошибка атаки:', error);
+        res.status(400).json({ error: error.message });
+    }
     }
 );
 
@@ -509,29 +538,29 @@ app.post('/api/admin/generate-barbarians', requireAuth, requireAdmin, async (req
 
 // Обновление ресурсов каждую минуту
 if (process.env.NODE_ENV !== 'test') {
-    setInterval(async () => {
-        try {
-            performance.start('resource-update');
-            await gameLogic.updateAllVillagesResources();
-            const duration = performance.end('resource-update');
-            gameLogger.resourcesUpdated('all', duration);
-
-            performance.start('construction-queue');
-            await gameLogic.processConstructionQueue();
-            performance.end('construction-queue');
-
-            performance.start('training-queue');
-            await gameLogic.processTrainingQueue();
-            performance.end('training-queue');
-
-            performance.start('process-attacks');
-            await gameLogic.processAttacks();
-            performance.end('process-attacks');
-
-        } catch (error) {
-            logger.error('Ошибка игрового цикла:', error);
-        }
-    }, 60000); // Каждую минуту
+setInterval(async () => {
+    try {
+        performance.start('resource-update');
+        await gameLogic.updateAllVillagesResources();
+        const duration = performance.end('resource-update');
+        gameLogger.resourcesUpdated('all', duration);
+        
+        performance.start('construction-queue');
+        await gameLogic.processConstructionQueue();
+        performance.end('construction-queue');
+        
+        performance.start('training-queue');
+        await gameLogic.processTrainingQueue();
+        performance.end('training-queue');
+        
+        performance.start('process-attacks');
+        await gameLogic.processAttacks();
+        performance.end('process-attacks');
+        
+    } catch (error) {
+        logger.error('Ошибка игрового цикла:', error);
+    }
+}, 60000); // Каждую минуту
 }
 
 // Health check endpoint
@@ -573,39 +602,7 @@ let server; // for graceful shutdown and tests
 let resourceInterval;
 
 function startServer(port = PORT) {
-    resourceInterval = setInterval(async () => {
-        try {
-            console.log('🔄 Запуск игрового цикла...');
-            
-            // Обновление ресурсов
-            console.log('📦 Обновление ресурсов...');
-            const resourceResult = await gameLogic.updateAllVillagesResources();
-            console.log(`✅ Ресурсы обновлены: ${resourceResult.updatedCount} деревень`);
-            
-            // Обработка строительства
-            console.log('🏗️ Обработка очереди строительства...');
-            await gameLogic.processConstructionQueue();
-            console.log('✅ Строительство обработано');
-            
-            // Обработка обучения войск
-            console.log('⚔️ Обработка очереди обучения войск...');
-            await gameLogic.processTrainingQueue();
-            console.log('✅ Обучение войск обработано');
-            
-            // Обработка атак
-            console.log('⚔️ Обработка атак...');
-            await gameLogic.processAttacks();
-            console.log('✅ Атаки обработаны');
-            
-            console.log('🎮 Игровой цикл завершен');
-            
-        } catch (error) {
-            console.error('❌ Ошибка игрового цикла:', error);
-            logger.error('Ошибка игрового цикла:', error);
-        }
-    }, 60000); // Каждую минуту
-
-    server = app.listen(port, () => {
+    const server = app.listen(port, () => {
         console.log(`
     ╔═══════════════════════════════════════╗
     ║       CryptoTribes запущен!           ║
@@ -618,38 +615,32 @@ function startServer(port = PORT) {
     ║   📝 Логи: ./logs/                    ║
     ║                                       ║
     ║   💎 Платежи:                         ║
-    ║   - Stripe: ${process.env.STRIPE_ENABLED === 'true' ? '✅' : '❌'}                     ║
-    ║   - Crypto: ${process.env.NOWPAYMENTS_ENABLED === 'true' ? '✅' : '❌'}                     ║
+        ║   - Stripe: ${process.env.STRIPE_SECRET_KEY ? '✅' : '❌'}                     ║
+        ║   - Crypto: ${process.env.CRYPTO_API_KEY ? '✅' : '❌'}                     ║
     ╚═══════════════════════════════════════╝
     `);
 
-        logger.info('Server started', {
-            port,
-            environment: process.env.NODE_ENV || 'development',
-            nodeVersion: process.version
+        logger.info('Server started');
+    });
+
+    // Graceful shutdown
+    process.on('SIGTERM', () => {
+        logger.info('SIGTERM received, shutting down gracefully');
+        server.close(() => {
+            logger.info('Process terminated');
+            process.exit(0);
         });
     });
+
     return server;
 }
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-    if (!server) return;
-    logger.info('SIGTERM received, shutting down gracefully');
-    server.close(async () => {
-        logger.info('Server closed');
-        await mongoose.connection.close();
-        logger.info('Database connection closed');
-        if (resourceInterval) clearInterval(resourceInterval);
-        process.exit(0);
-    });
-});
+// Подключаем роуты пользователей
+app.use('/api/users', userRoutes);
 
-module.exports = { app, startServer, resourceInterval };
-
-// Only start server if this file is run directly
-if (require.main === module) {
+// Запускаем сервер только если не в тестовом режиме
+if (process.env.NODE_ENV !== 'test') {
     startServer();
 }
 
-app.use('/api/users', userRoutes);
+module.exports = { app, startServer };

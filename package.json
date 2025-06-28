@@ -9,7 +9,12 @@
     "test": "jest --coverage --detectOpenHandles",
     "test:watch": "jest --watch",
     "test:performance": "jest --testPathPattern=performance",
-    "generate-data": "node test-data.js"
+    "generate-data": "node testdata.js",
+    "lint": "eslint server/ public/ tests/",
+    "lint:fix": "eslint server/ public/ tests/ --fix",
+    "security-audit": "npm audit",
+    "db:migrate": "node scripts/migrate.js",
+    "db:seed": "node scripts/seed.js"
   },
   "keywords": [
     "game",
@@ -22,7 +27,9 @@
   "dependencies": {
     "axios": "^1.10.0",
     "bcryptjs": "^2.4.3",
+    "compression": "^1.8.0",
     "connect-mongo": "^5.1.0",
+    "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "express-mongo-sanitize": "^2.2.0",
@@ -31,6 +38,7 @@
     "express-validator": "^7.2.1",
     "helmet": "^7.2.0",
     "hpp": "^0.2.3",
+    "lru-cache": "^11.1.0",
     "mongoose": "^6.9.0",
     "stripe": "^18.2.1",
     "winston": "^3.10.0",
@@ -38,9 +46,13 @@
   },
   "devDependencies": {
     "@jest/globals": "^29.6.4",
+    "eslint": "^8.57.0",
+    "eslint-config-standard": "^17.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^6.1.1",
     "jest": "^29.6.4",
     "nodemon": "^3.0.1",
-    "stripe": "^11.0.0",
     "supertest": "^6.3.3"
   },
   "jest": {
@@ -53,11 +65,18 @@
     "testMatch": [
       "**/tests/**/*.test.js"
     ],
+    "testPathIgnorePatterns": [
+      "/node_modules/"
+    ],
     "setupFilesAfterEnv": [
       "<rootDir>/tests/setup.js"
     ],
     "testTimeout": 30000,
     "forceExit": true,
     "detectOpenHandles": true
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
   }
 }

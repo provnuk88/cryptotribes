@@ -9,14 +9,76 @@ const { logger, gameLogger } = require('./logger');
 
 // Game constants
 const BUILDING_TYPES = {
-    tribal_hall: { name: 'Tribal Hall', baseCost: { wood: 90, clay: 80, iron: 70, food: 0 }, baseTime: 1 },
-    farm: { name: 'Farm', baseCost: { wood: 45, clay: 40, iron: 30, food: 0 }, baseTime: 2, production: 'food', baseProduction: 30 },
-    lumbercamp: { name: 'Lumbercamp', baseCost: { wood: 50, clay: 60, iron: 40, food: 0 }, baseTime: 2, production: 'wood', baseProduction: 30 },
-    clay_pit: { name: 'Clay Pit', baseCost: { wood: 65, clay: 50, iron: 40, food: 0 }, baseTime: 2, production: 'clay', baseProduction: 30 },
-    iron_mine: { name: 'Iron Mine', baseCost: { wood: 75, clay: 65, iron: 70, food: 0 }, baseTime: 3, production: 'iron', baseProduction: 30 },
-    warehouse: { name: 'Warehouse', baseCost: { wood: 60, clay: 50, iron: 40, food: 0 }, baseTime: 2, baseCapacity: 1000 },
-    barracks: { name: 'Barracks', baseCost: { wood: 200, clay: 170, iron: 90, food: 0 }, baseTime: 4 },
-    wall: { name: 'Wall', baseCost: { wood: 50, clay: 100, iron: 20, food: 0 }, baseTime: 3, defenseBonus: 5 }
+    main: { 
+        name: 'Главное здание', 
+        description: 'Центр вашей деревни. Увеличивает скорость строительства других зданий и позволяет сносить постройки.',
+        baseCost: { wood: 90, clay: 80, iron: 70, food: 0 },
+        buildTime: 5 
+    },
+    barracks: { 
+        name: 'Казармы', 
+        description: 'Здесь обучаются пехотные войска. Чем выше уровень, тем быстрее происходит обучение.',
+        baseCost: { wood: 180, clay: 250, iron: 180, food: 0 },
+        buildTime: 10 
+    },
+    farm: { 
+        name: 'Ферма', 
+        description: 'Обеспечивает продовольствием население деревни. Каждый уровень увеличивает лимит населения на 50.',
+        baseCost: { wood: 45, clay: 40, iron: 20, food: 0 },
+        production: 'food',
+        buildTime: 3 
+    },
+    warehouse: { 
+        name: 'Склад', 
+        description: 'Увеличивает вместимость ресурсов. Защищает часть ресурсов от грабежа.',
+        baseCost: { wood: 60, clay: 50, iron: 40, food: 0 },
+        buildTime: 4 
+    },
+    wall: { 
+        name: 'Стена', 
+        description: 'Защищает деревню от атак. Увеличивает защитную силу всех войск в деревне.',
+        baseCost: { wood: 50, clay: 100, iron: 20, food: 0 },
+        buildTime: 6 
+    },
+    lumbercamp: { 
+        name: 'Лесопилка', 
+        description: 'Производит древесину. Каждый уровень увеличивает производство дерева.',
+        baseCost: { wood: 50, clay: 60, iron: 40, food: 0 },
+        production: 'wood',
+        buildTime: 3 
+    },
+    clay_pit: { 
+        name: 'Глиняный карьер', 
+        description: 'Добывает глину. Каждый уровень увеличивает производство глины.',
+        baseCost: { wood: 65, clay: 40, iron: 60, food: 0 },
+        production: 'clay',
+        buildTime: 3 
+    },
+    iron_mine: { 
+        name: 'Железный рудник', 
+        description: 'Добывает железо. Каждый уровень увеличивает производство железа.',
+        baseCost: { wood: 75, clay: 65, iron: 70, food: 0 },
+        production: 'iron',
+        buildTime: 4 
+    },
+    market: { 
+        name: 'Рынок', 
+        description: 'Позволяет торговать ресурсами с другими игроками. Увеличивает скорость торговцев.',
+        baseCost: { wood: 100, clay: 100, iron: 100, food: 0 },
+        buildTime: 8 
+    },
+    tribal_hall: { 
+        name: 'Tribal Hall', 
+        description: 'Административный центр деревни. Ограничивает максимальный уровень других зданий.',
+        baseCost: { wood: 15000, clay: 25000, iron: 10000, food: 0 },
+        buildTime: 60 
+    },
+    smithy: {
+        name: 'Кузница',
+        description: 'Позволяет исследовать улучшения для войск. Увеличивает атаку и защиту ваших воинов.',
+        baseCost: { wood: 220, clay: 180, iron: 240, food: 0 },
+        buildTime: 12
+    }
 };
 
 const TROOP_TYPES = {
@@ -39,13 +101,12 @@ function calculateBuildingCost(type, currentLevel) {
 
 function calculateBuildTime(type, level) {
     const b = BUILDING_TYPES[type];
-    return Math.floor(b.baseTime * Math.pow(level, 1.1));
+    return Math.floor(b.buildTime * Math.pow(level, 1.1));
 }
 
 function calculateProduction(type, level) {
-    const b = BUILDING_TYPES[type];
-    if (!b.production) return 0;
-    return Math.floor(b.baseProduction * level * Math.pow(1.2, level - 1));
+    // Базовое производство 30 ресурсов в час на 1 уровень
+    return level > 0 ? 30 * level : 0;
 }
 
 function calculateWarehouseCapacity(level) {
@@ -76,7 +137,7 @@ async function createVillage(userId, name) {
     const buildings = Object.keys(BUILDING_TYPES).map((t) => ({
         village_id: village._id,
         building_type: t,
-        level: t === 'tribal_hall' ? 1 : 0
+        level: (t === 'tribal_hall' || t === 'main') ? 1 : 0
     }));
     await Building.insertMany(buildings);
 
@@ -95,7 +156,18 @@ async function getVillage(userId, villageId = null) {
     return Village.findOne({ user_id: userObjectId }).lean();
 }
 
+// Кэш для предотвращения одновременного обновления одной деревни
+const updateLocks = new Map();
+
 async function updateVillageResources(village) {
+    const villageId = village._id.toString();
+    
+    // Проверяем блокировку
+    if (updateLocks.has(villageId)) {
+        // Ждем завершения другого обновления
+        await updateLocks.get(villageId);
+    }
+    
     const now = new Date();
     const last = new Date(village.last_update);
     const diff = Math.floor((now - last) / 60000); // разница в минутах
@@ -110,7 +182,39 @@ async function updateVillageResources(village) {
         };
     }
 
+    // Создаем блокировку
+    const updatePromise = _doUpdateVillageResources(village, now, diff);
+    updateLocks.set(villageId, updatePromise);
+    
     try {
+        const result = await updatePromise;
+        return result;
+    } finally {
+        updateLocks.delete(villageId);
+    }
+}
+
+async function _doUpdateVillageResources(village, now, diff) {
+    try {
+        // Получаем свежие данные деревни из БД для избежания race condition
+        const freshVillage = await Village.findById(village._id).lean();
+        if (!freshVillage) {
+            throw new Error('Деревня не найдена в БД');
+        }
+        
+        // Если деревня уже была обновлена недавно, используем свежие данные
+        const freshLastUpdate = new Date(freshVillage.last_update);
+        const freshDiff = Math.floor((now - freshLastUpdate) / 60000);
+        
+        if (freshDiff < 1) {
+            return {
+                ...freshVillage,
+                production: { wood: 0, clay: 0, iron: 0, food: 0 },
+                capacity: 1000,
+                last_update: freshVillage.last_update
+            };
+        }
+
         const buildings = await Building.find({ village_id: village._id }).lean();
         let production = { wood: 0, clay: 0, iron: 0, food: 0 };
         let warehouse = 0;
@@ -136,20 +240,23 @@ async function updateVillageResources(village) {
         production.food -= upkeep;
 
         // Ограничиваем максимальное время обновления (12 часов)
-        const maxMinutes = Math.min(diff, 720);
+        const maxMinutes = Math.min(freshDiff, 720);
         const capacity = calculateWarehouseCapacity(warehouse);
         
-        // Рассчитываем новые ресурсы
+        // Рассчитываем новые ресурсы на основе свежих данных
         const newResources = {
-            wood: Math.min(village.wood + (production.wood * maxMinutes / 60), capacity),
-            clay: Math.min(village.clay + (production.clay * maxMinutes / 60), capacity),
-            iron: Math.min(village.iron + (production.iron * maxMinutes / 60), capacity),
-            food: Math.max(0, Math.min(village.food + (production.food * maxMinutes / 60), capacity))
+            wood: Math.min(freshVillage.wood + (production.wood * maxMinutes / 60), capacity),
+            clay: Math.min(freshVillage.clay + (production.clay * maxMinutes / 60), capacity),
+            iron: Math.min(freshVillage.iron + (production.iron * maxMinutes / 60), capacity),
+            food: Math.max(0, Math.min(freshVillage.food + (production.food * maxMinutes / 60), capacity))
         };
 
-        // Сохраняем обновленные ресурсы в базу данных
+        // Сохраняем обновленные ресурсы в базу данных с оптимистичной блокировкой
         const updateResult = await Village.updateOne(
-            { _id: village._id }, 
+            { 
+                _id: village._id,
+                last_update: freshVillage.last_update // Проверяем, что данные не изменились
+            }, 
             { 
                 ...newResources, 
                 last_update: now 
@@ -157,11 +264,18 @@ async function updateVillageResources(village) {
         );
 
         if (updateResult.modifiedCount === 0) {
-            console.error(`Не удалось обновить ресурсы для деревни ${village._id}`);
+            // Данные были изменены другим процессом, возвращаем свежие данные
+            const newestVillage = await Village.findById(village._id).lean();
+            return {
+                ...newestVillage,
+                production,
+                capacity,
+                last_update: newestVillage.last_update
+            };
         }
 
         return { 
-            ...village, 
+            ...freshVillage, 
             ...newResources, 
             production, 
             capacity, 
@@ -200,39 +314,39 @@ function isValidObjectId(id) {
 async function upgradeBuilding(userId, villageId, buildingType) {
     return withTransaction(async (session) => {
         if (!isValidObjectId(villageId)) throw new Error('Некорректный villageId');
-        const vid = new mongoose.Types.ObjectId(villageId);
+    const vid = new mongoose.Types.ObjectId(villageId);
         
         // Все операции с { session }
         const village = await Village.findOne({ _id: vid, user_id: userId }).session(session);
-        if (!village) throw new Error('Деревня не найдена');
+    if (!village) throw new Error('Деревня не найдена');
         
-        const updated = await updateVillageResources(village);
+    const updated = await updateVillageResources(village);
         const building = await Building.findOne({ 
             village_id: vid, 
             building_type: buildingType 
         }).session(session);
         
-        if (!building) throw new Error('Здание не найдено');
-        if (building.is_upgrading) throw new Error('Здание уже улучшается');
+    if (!building) throw new Error('Здание не найдено');
+    if (building.is_upgrading) throw new Error('Здание уже улучшается');
         if (building.level >= 20) throw new Error('Достигнут максимальный уровень здания');
-        
-        if (buildingType !== 'tribal_hall') {
+
+    if (buildingType !== 'tribal_hall') {
             const tribalHall = await Building.findOne({ 
                 village_id: vid, 
                 building_type: 'tribal_hall' 
             }).session(session);
             
-            if (building.level >= tribalHall.level) {
-                throw new Error('Сначала улучшите Tribal Hall');
-            }
+        if (building.level >= tribalHall.level) {
+            throw new Error('Сначала улучшите Tribal Hall');
         }
-        
-        const cost = calculateBuildingCost(buildingType, building.level);
+    }
+
+    const cost = calculateBuildingCost(buildingType, building.level);
         if (updated.wood < cost.wood || updated.clay < cost.clay || 
             updated.iron < cost.iron || updated.food < cost.food) {
-            throw new Error('Недостаточно ресурсов');
-        }
-        
+        throw new Error('Недостаточно ресурсов');
+    }
+
         // Обновляем ресурсы
         await Village.updateOne(
             { _id: vid },
@@ -246,9 +360,9 @@ async function upgradeBuilding(userId, villageId, buildingType) {
             },
             { session }
         );
-        
-        const buildTime = calculateBuildTime(buildingType, building.level + 1);
-        const finishTime = new Date(Date.now() + buildTime * 60000);
+
+    const buildTime = calculateBuildTime(buildingType, building.level + 1);
+    const finishTime = new Date(Date.now() + buildTime * 60000);
         
         // Начинаем улучшение
         await Building.updateOne(
@@ -316,10 +430,29 @@ async function trainTroops(userId, villageId, troopType, amount) {
     await Village.updateOne({ _id: vid }, {
         $inc: { wood: -totalCost.wood, clay: -totalCost.clay, iron: -totalCost.iron, food: -totalCost.food }
     });
+    // Убеждаемся, что запись о войсках существует
+    await Troop.updateOne(
+        { village_id: vid, troop_type: troopType },
+        { $setOnInsert: { village_id: vid, troop_type: troopType, amount: 0 } },
+        { upsert: true }
+    );
+
     const trainTime = info.trainTime * amount;
     const finishTime = new Date(Date.now() + trainTime * 60000);
     await TrainingQueue.create({ village_id: vid, troop_type: troopType, amount, finish_time: finishTime });
     return { success: true, finishTime: finishTime.toISOString(), trainTime };
+}
+
+async function getTrainingQueue(villageId) {
+    if (!isValidObjectId(villageId)) throw new Error('Некорректный villageId');
+    const id = new mongoose.Types.ObjectId(villageId);
+    const queue = await TrainingQueue.find({ village_id: id }).lean();
+    return queue.map(q => ({
+        ...q,
+        id: q._id.toString(),
+        name: TROOP_TYPES[q.troop_type].name,
+        finishTime: q.finish_time.toISOString()
+    }));
 }
 
 async function getWorldMap() {
@@ -424,11 +557,11 @@ async function updateAllVillagesResources() {
             const updatePromises = villages.map(village => 
                 updateVillageResources(village)
                     .then(() => {
-                        updatedCount++;
+                updatedCount++;
                     })
                     .catch(error => {
                         logger.error(`Failed to update village ${village._id}:`, error);
-                        errorCount++;
+                errorCount++;
                     })
             );
             
@@ -589,7 +722,88 @@ async function processAttacks() {
 async function createTribe() { return { success: true }; }
 async function getTribes() { return []; }
 async function joinTribe() { return { success: true }; }
-async function speedUpAction() { return { success: true }; }
+async function speedUpAction(userId, actionId, type) {
+    try {
+        // Проверяем, что у пользователя есть кристаллы
+        const user = await User.findById(userId);
+        if (!user) {
+            throw new Error('Пользователь не найден');
+        }
+        
+        if (user.crystals < 10) {
+            throw new Error('Недостаточно кристаллов (требуется 10)');
+        }
+        
+        if (type === 'building') {
+            // Ускоряем строительство здания
+            const building = await Building.findById(actionId);
+            if (!building) {
+                throw new Error('Здание не найдено');
+            }
+            
+            if (!building.is_upgrading) {
+                throw new Error('Здание не строится');
+            }
+            
+            // Проверяем, что здание принадлежит пользователю
+            const village = await Village.findById(building.village_id);
+            if (!village || village.user_id.toString() !== userId.toString()) {
+                throw new Error('Здание не принадлежит пользователю');
+            }
+            
+            // Завершаем строительство
+            await Building.updateOne(
+                { _id: actionId },
+                {
+                    $inc: { level: 1 },
+                    $unset: { is_upgrading: "", upgrade_finish_time: "" }
+                }
+            );
+            
+            // Добавляем очки деревне
+            await Village.updateOne(
+                { _id: building.village_id },
+                { $inc: { points: building.level * 10 } }
+            );
+            
+        } else if (type === 'training') {
+            // Ускоряем обучение войск
+            const training = await TrainingQueue.findById(actionId);
+            if (!training) {
+                throw new Error('Обучение не найдено');
+            }
+            
+            // Проверяем, что обучение принадлежит пользователю
+            const village = await Village.findById(training.village_id);
+            if (!village || village.user_id.toString() !== userId.toString()) {
+                throw new Error('Обучение не принадлежит пользователю');
+            }
+            
+            // Завершаем обучение
+            await Troop.updateOne(
+                { village_id: training.village_id, troop_type: training.troop_type },
+                { $inc: { amount: training.amount } },
+                { upsert: true }
+            );
+            
+            // Удаляем из очереди
+            await TrainingQueue.deleteOne({ _id: actionId });
+        } else {
+            throw new Error('Неверный тип действия');
+        }
+        
+        // Списываем кристаллы
+        await User.updateOne(
+            { _id: userId },
+            { $inc: { crystals: -10 } }
+        );
+        
+        return { success: true, message: 'Действие ускорено!' };
+        
+    } catch (error) {
+        throw error;
+    }
+}
 
 /**
  * Генерирует N варварских деревень на случайных свободных позициях
@@ -636,6 +850,7 @@ module.exports = {
     upgradeBuilding,
     getTroops,
     trainTroops,
+    getTrainingQueue,
     getWorldMap,
     attackVillage,
     createTribe,
