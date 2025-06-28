@@ -4,6 +4,7 @@ const session = require('express-session');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
+const MongoStore = require('connect-mongo');
 require('../db');
 const User = require('../models/User');
 const gameLogic = require('./gameLogic');
@@ -29,6 +30,7 @@ const {
     applyPromoCode,
     CRYSTAL_PACKAGES 
 } = require('./payments');
+const userRoutes = require('./routes/userRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -53,17 +55,17 @@ app.use('/api/tribe/create', createLimiter);
 
 // Сессии
 app.use(session({
+    store: MongoStore.create({ mongoUrl: process.env.MONGO_URI || 'mongodb://localhost:27017/cryptotribes' }),
     secret: process.env.SESSION_SECRET || 'cryptotribes-secret-key-change-in-production',
     resave: false,
     saveUninitialized: false,
-    cookie: { 
+    cookie: {
         maxAge: 24 * 60 * 60 * 1000, // 24 часа
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production' // HTTPS в production
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax'
     }
 }));
-
-
 
 // Middleware для проверки авторизации
 function requireAuth(req, res, next) {
@@ -178,8 +180,46 @@ app.get('/api/user', requireAuth, async (req, res) => {
 
 // === ИГРОВЫЕ ДАННЫЕ ===
 
-// Получить данные деревни
-app.get('/api/village/:id?', requireAuth, async (req, res) => {
+// Получить деревню пользователя
+app.get('/api/village', requireAuth, async (req, res) => {
+    try {
+        const village = await gameLogic.getVillage(req.userIdObject);
+        if (!village) {
+            const villageId = await gameLogic.createVillage(req.userIdObject, 'Моя деревня');
+            const newVillage = await gameLogic.getVillage(req.userIdObject, villageId);
+            res.json(newVillage);
+        } else {
+            const updated = await gameLogic.updateVillageResources(village);
+            res.json(updated);
+        }
+    } catch (error) {
+        logger.error('Ошибка получения деревни:', error);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
+// Принудительно обновить ресурсы пользователя
+app.post('/api/village/update-resources', requireAuth, async (req, res) => {
+    try {
+        const village = await gameLogic.getVillage(req.userIdObject);
+        if (!village) {
+            return res.status(404).json({ error: 'Деревня не найдена' });
+        }
+        
+        const updated = await gameLogic.updateVillageResources(village);
+        res.json({
+            success: true,
+            message: 'Ресурсы обновлены',
+            village: updated
+        });
+    } catch (error) {
+        logger.error('Ошибка обновления ресурсов:', error);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
+// Получить деревню по ID
+app.get('/api/village/:id', requireAuth, async (req, res) => {
     try {
         const villageId = req.params.id;
         const village = await gameLogic.getVillage(req.userIdObject, villageId);
@@ -206,6 +246,9 @@ app.get('/api/buildings/:villageId', requireAuth, async (req, res) => {
         res.status(200).json(buildings);
     } catch (error) {
         logger.error('Ошибка получения зданий:', error);
+        if (error.message && error.message.includes('villageId')) {
+            return res.status(400).json({ error: error.message });
+        }
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
@@ -215,13 +258,8 @@ app.post('/api/build', requireAuth, async (req, res) => {
     const { villageId, buildingType } = req.body;
     
     try {
-codex/починить-ветку-codex-test-backend-cryptotribes
-        const result = await gameLogic.upgradeBuilding(req.session.userId, villageId, buildingType);
-        res.status(200).json(result);
-
-        const result = await gameLogic.upgradeBuilding(req.userIdObject, villageId, buildingType);
+         const result = await gameLogic.upgradeBuilding(req.userIdObject, villageId, buildingType);
         res.json(result);
- codex-test
     } catch (error) {
         logger.error('Ошибка строительства:', error);
         res.status(400).json({ error: error.message });
@@ -245,13 +283,8 @@ app.post('/api/train', requireAuth, async (req, res) => {
     const { villageId, troopType, amount } = req.body;
     
     try {
- codex/починить-ветку-codex-test-backend-cryptotribes
-        const result = await gameLogic.trainTroops(req.session.userId, villageId, troopType, amount);
-        res.status(200).json(result);
-
         const result = await gameLogic.trainTroops(req.userIdObject, villageId, troopType, amount);
         res.json(result);
-codex-test
     } catch (error) {
         logger.error('Ошибка обучения войск:', error);
         res.status(400).json({ error: error.message });
@@ -274,13 +307,8 @@ app.post('/api/attack', requireAuth, async (req, res) => {
     const { fromVillageId, toVillageId, troops } = req.body;
     
     try {
-codex/починить-ветку-codex-test-backend-cryptotribes
-        const result = await gameLogic.attackVillage(req.session.userId, fromVillageId, toVillageId, troops);
-        res.status(200).json(result);
-
         const result = await gameLogic.attackVillage(req.userIdObject, fromVillageId, toVillageId, troops);
         res.json(result);
- codex-test
     } catch (error) {
         logger.error('Ошибка атаки:', error);
         res.status(400).json({ error: error.message });
@@ -294,13 +322,8 @@ app.post('/api/tribe/create', requireAuth, async (req, res) => {
     const { name, tag } = req.body;
     
     try {
- codex/починить-ветку-codex-test-backend-cryptotribes
-        const result = await gameLogic.createTribe(req.session.userId, name, tag);
-        res.status(200).json(result);
-
         const result = await gameLogic.createTribe(req.userIdObject, name, tag);
         res.json(result);
- codex-test
     } catch (error) {
         logger.error('Ошибка создания племени:', error);
         res.status(400).json({ error: error.message });
@@ -323,13 +346,8 @@ app.post('/api/tribe/join', requireAuth, async (req, res) => {
     const { tribeId } = req.body;
     
     try {
- codex/починить-ветку-codex-test-backend-cryptotribes
-        const result = await gameLogic.joinTribe(req.session.userId, tribeId);
-        res.status(200).json(result);
-
         const result = await gameLogic.joinTribe(req.userIdObject, tribeId);
         res.json(result);
- codex-test
     } catch (error) {
         logger.error('Ошибка присоединения к племени:', error);
         res.status(400).json({ error: error.message });
@@ -403,6 +421,27 @@ app.post('/api/shop/promo', requireAuth, async (req, res) => {
     }
 });
 
+// Административный эндпоинт для обновления ресурсов всех деревень
+app.post('/api/admin/update-all-resources', requireAuth, async (req, res) => {
+    try {
+        // Проверяем, является ли пользователь администратором (можно добавить проверку роли)
+        const user = await User.findById(req.userIdObject).lean();
+        if (!user || user.username !== 'admin') {
+            return res.status(403).json({ error: 'Доступ запрещен' });
+        }
+        
+        const result = await gameLogic.updateAllVillagesResources();
+        res.json({
+            success: true,
+            message: 'Ресурсы всех деревень обновлены',
+            result
+        });
+    } catch (error) {
+        logger.error('Ошибка обновления ресурсов всех деревень:', error);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
 // Купить кристаллы (заглушка)
 app.post('/api/shop/buy-crystals', requireAuth, async (req, res) => {
     const { amount } = req.body;
@@ -420,45 +459,32 @@ app.post('/api/speed-up', requireAuth, async (req, res) => {
     const { actionId, type } = req.body;
     
     try {
- codex/починить-ветку-codex-test-backend-cryptotribes
-        const result = await gameLogic.speedUpAction(req.session.userId, actionId, type);
-        res.status(200).json(result);
-
         const result = await gameLogic.speedUpAction(req.userIdObject, actionId, type);
-        res.json(result);
- codex-test
+        res.status(200).json(result);
     } catch (error) {
         logger.error('Ошибка ускорения:', error);
         res.status(400).json({ error: error.message });
     }
 });
 
-// === ИГРОВОЙ ЦИКЛ ===
-
-// Обновление ресурсов каждую минуту
-setInterval(async () => {
+// Административный эндпоинт для генерации варварских деревень
+app.post('/api/admin/generate-barbarians', requireAuth, async (req, res) => {
     try {
-        performance.start('resource-update');
-        await gameLogic.updateAllVillagesResources();
-        const duration = performance.end('resource-update');
-        gameLogger.resourcesUpdated('all', duration);
-        
-        performance.start('construction-queue');
-        await gameLogic.processConstructionQueue();
-        performance.end('construction-queue');
-        
-        performance.start('training-queue');
-        await gameLogic.processTrainingQueue();
-        performance.end('training-queue');
-        
-        performance.start('process-attacks');
-        await gameLogic.processAttacks();
-        performance.end('process-attacks');
-        
+        // Проверяем, является ли пользователь админом (можно доработать по ролям)
+        const user = await User.findById(req.userIdObject).lean();
+        if (!user || user.username !== 'admin') {
+            return res.status(403).json({ error: 'Доступ запрещен' });
+        }
+        const count = Number(req.body.count) || 10;
+        const result = await gameLogic.generateBarbarianVillages(count);
+        res.json({ success: true, created: result.length });
     } catch (error) {
-        logger.error('Ошибка игрового цикла:', error);
+        logger.error('Ошибка генерации варварских деревень:', error);
+        res.status(500).json({ error: 'Ошибка сервера' });
     }
-}, 60000); // Каждую минуту
+});
+
+// === ИГРОВОЙ ЦИКЛ ===
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -493,8 +519,41 @@ app.use((err, req, res, next) => {
 });
 
 let server; // for graceful shutdown and tests
+let resourceInterval;
 
 function startServer(port = PORT) {
+    resourceInterval = setInterval(async () => {
+        try {
+            console.log('🔄 Запуск игрового цикла...');
+            
+            // Обновление ресурсов
+            console.log('📦 Обновление ресурсов...');
+            const resourceResult = await gameLogic.updateAllVillagesResources();
+            console.log(`✅ Ресурсы обновлены: ${resourceResult.updatedCount} деревень`);
+            
+            // Обработка строительства
+            console.log('🏗️ Обработка очереди строительства...');
+            await gameLogic.processConstructionQueue();
+            console.log('✅ Строительство обработано');
+            
+            // Обработка обучения войск
+            console.log('⚔️ Обработка очереди обучения войск...');
+            await gameLogic.processTrainingQueue();
+            console.log('✅ Обучение войск обработано');
+            
+            // Обработка атак
+            console.log('⚔️ Обработка атак...');
+            await gameLogic.processAttacks();
+            console.log('✅ Атаки обработаны');
+            
+            console.log('🎮 Игровой цикл завершен');
+            
+        } catch (error) {
+            console.error('❌ Ошибка игрового цикла:', error);
+            logger.error('Ошибка игрового цикла:', error);
+        }
+    }, 60000); // Каждую минуту
+
     server = app.listen(port, () => {
         console.log(`
     ╔═══════════════════════════════════════╗
@@ -522,10 +581,6 @@ function startServer(port = PORT) {
     return server;
 }
 
-if (require.main === module) {
-    startServer();
-}
-
 // Graceful shutdown
 process.on('SIGTERM', () => {
     if (!server) return;
@@ -534,10 +589,16 @@ process.on('SIGTERM', () => {
         logger.info('Server closed');
         await mongoose.connection.close();
         logger.info('Database connection closed');
+        if (resourceInterval) clearInterval(resourceInterval);
         process.exit(0);
     });
 });
 
-module.exports = app;
-module.exports.startServer = startServer;
-module.exports.server = server;
+module.exports = { app, startServer, resourceInterval };
+
+// Only start server if this file is run directly
+if (require.main === module) {
+    startServer();
+}
+
+app.use('/api/users', userRoutes);

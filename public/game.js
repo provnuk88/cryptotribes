@@ -263,18 +263,22 @@ function updateResources(village) {
 
 // Загрузить здания
 async function loadBuildings() {
+    // Защита от некорректного villageId
+    if (!currentVillage || !(currentVillage.id || currentVillage._id)) {
+        console.error('Village not loaded!');
+        return;
+    }
+    // Универсально поддерживаем id и _id
+    const villageId = currentVillage.id || currentVillage._id;
     try {
-        const response = await fetch(`/api/buildings/${currentVillage.id}`);
+        const response = await fetch(`/api/buildings/${villageId}`);
         const buildings = await response.json();
-        
         const grid = document.getElementById('buildings-grid');
         grid.innerHTML = '';
-        
         buildings.forEach(building => {
             const card = createBuildingCard(building);
             grid.appendChild(card);
         });
-        
     } catch (error) {
         console.error('Ошибка загрузки зданий:', error);
     }
@@ -288,6 +292,22 @@ function createBuildingCard(building) {
         card.classList.add('upgrading');
     }
     
+    // Эмодзи для зданий
+    const buildingEmojis = {
+        main: "🏰",
+        barracks: "🏯",
+        farm: "🌾",
+        warehouse: "🏚️",
+        wall: "🧱",
+        lumbercamp: "🌲",
+        clay_pit: "🪨",
+        iron_mine: "⛏️",
+        market: "🏤",
+        tribal_hall: "👑",
+        // Добавьте другие типы по необходимости
+    };
+    const emoji = buildingEmojis[building.building_type] || "❓";
+
     let statusText = '';
     if (building.is_upgrading) {
         const finishTime = new Date(building.upgrade_finish_time);
@@ -303,6 +323,7 @@ function createBuildingCard(building) {
     
     card.innerHTML = `
         <div class="building-header">
+            <span class="building-emoji" style="font-size:2em;">${emoji}</span>
             <span class="building-name">${building.name}</span>
             <span class="building-level">Ур. ${building.level}</span>
         </div>
