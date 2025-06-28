@@ -8,10 +8,10 @@ const paymentSchema = new mongoose.Schema({
   crystals: { type: Number, required: true },
   status: { type: String, default: 'pending', index: true },
   payment_method: { type: String, required: true },
-  package_id: String,
-  payment_address: String,
+  package_id: { type: String, index: true },
+  payment_address: { type: String, index: true },
   created_at: { type: Date, default: Date.now },
-  completed_at: Date
+  completed_at: { type: Date }
 });
 
 module.exports = mongoose.model('Payment', paymentSchema);

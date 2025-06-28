@@ -1,3 +1,19 @@
+// Функция для получения ID объекта (поддерживает и id и _id)
+function getObjectId(obj) {
+    if (!obj) {
+        console.error('Object is null or undefined');
+        return null;
+    }
+    
+    const id = obj.id || obj._id;
+    if (!id) {
+        console.error('Object has no id or _id field:', obj);
+        return null;
+    }
+    
+    return id;
+}
+
 // Глобальные переменные
 let currentUser = null;
 let currentVillage = null;
@@ -201,22 +217,38 @@ async function initGame() {
     try {
         // Получаем данные пользователя
         const userResponse = await fetch('/api/user');
-        const userData = await userResponse.json();
-        currentUser = userData;
-        csrfToken = userData.csrfToken; // Обновляем CSRF токен
+        if (!userResponse.ok) {
+            throw new Error(`HTTP ${userResponse.status}: ${userResponse.statusText}`);
+        }
         
-        // Обновляем отображение кристаллов
-        document.getElementById('crystals-amount').textContent = userData.crystals || 0;
+        const userData = await userResponse.json();
+        
+        if (!userData || !userData.userId) {
+            throw new Error('Получены некорректные данные пользователя');
+        }
+        
+        currentUser = {
+            ...userData,
+            userId: userData.userId,
+            username: userData.username,
+            crystals: userData.crystals || 0
+        };
+        csrfToken = userData.csrfToken;
+        
+        // Сразу обновляем отображение кристаллов
+        document.getElementById('crystals-amount').textContent = currentUser.crystals;
         
         // Загружаем деревню
         await loadVillage();
         
         // Запускаем периодическое обновление
-        updateInterval = setInterval(updateGameData, 30000); // Каждые 30 секунд
+        updateInterval = setInterval(updateGameData, 60000); // Каждую минуту
         
     } catch (error) {
         console.error('Ошибка инициализации игры:', error);
-        alert('Ошибка загрузки игры. Попробуйте перезагрузить страницу.');
+        showNotification('Ошибка загрузки игры. Попробуйте перезагрузить страницу.');
+        // Попробуем перезагрузить через 10 секунд
+        setTimeout(initGame, 10000);
     }
 }
 
@@ -224,7 +256,15 @@ async function initGame() {
 async function loadVillage() {
     try {
         const response = await fetch('/api/village');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
         const village = await response.json();
+        
+        if (!village || !village.id) {
+            throw new Error('Получены некорректные данные деревни');
+        }
         
         currentVillage = village;
         
@@ -237,6 +277,9 @@ async function loadVillage() {
         
     } catch (error) {
         console.error('Ошибка загрузки деревни:', error);
+        showNotification('Ошибка загрузки деревни');
+        // Попробуем перезагрузить через 5 секунд
+        setTimeout(loadVillage, 5000);
     }
 }
 
@@ -257,26 +300,36 @@ function updateResources(village) {
         document.getElementById('food-production').style.color = foodProd >= 0 ? '#4caf50' : '#f44336';
     }
     
-    // TODO: Получить кристаллы из данных пользователя
-    document.getElementById('crystals-amount').textContent = '100';
+    // Обновляем кристаллы из данных пользователя, а не из деревни
+    if (currentUser && currentUser.crystals !== undefined) {
+        document.getElementById('crystals-amount').textContent = currentUser.crystals;
+    }
 }
 
 // Загрузить здания
 async function loadBuildings() {
+    const villageId = getObjectId(currentVillage);
+    if (!villageId) {
+        console.error('Village not loaded or has no ID!');
+        showNotification('Ошибка: деревня не загружена');
+        return;
+    }
+    
     try {
-        const response = await fetch(`/api/buildings/${currentVillage.id}`);
+        const response = await fetch(`/api/buildings/${villageId}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const buildings = await response.json();
-        
         const grid = document.getElementById('buildings-grid');
         grid.innerHTML = '';
-        
         buildings.forEach(building => {
             const card = createBuildingCard(building);
             grid.appendChild(card);
         });
-        
     } catch (error) {
         console.error('Ошибка загрузки зданий:', error);
+        showNotification('Ошибка загрузки зданий');
     }
 }
 
@@ -287,6 +340,22 @@ function createBuildingCard(building) {
     if (building.is_upgrading) {
         card.classList.add('upgrading');
     }
+    
+    // Эмодзи для зданий
+    const buildingEmojis = {
+        main: "🏰",
+        barracks: "🏯",
+        farm: "🌾",
+        warehouse: "🏚️",
+        wall: "🧱",
+        lumbercamp: "🌲",
+        clay_pit: "🪨",
+        iron_mine: "⛏️",
+        market: "🏤",
+        tribal_hall: "👑",
+        // Добавьте другие типы по необходимости
+    };
+    const emoji = buildingEmojis[building.building_type] || "❓";
     
     let statusText = '';
     if (building.is_upgrading) {
@@ -303,6 +372,7 @@ function createBuildingCard(building) {
     
     card.innerHTML = `
         <div class="building-header">
+            <span class="building-emoji" style="font-size:2em;">${emoji}</span>
             <span class="building-name">${building.name}</span>
             <span class="building-level">Ур. ${building.level}</span>
         </div>
@@ -325,10 +395,11 @@ function showBuildingModal(building) {
     const content = document.getElementById('building-modal-content');
     
     if (building.is_upgrading) {
+        const buildingId = building._id || building.id;
         content.innerHTML = `
             <p>Здание улучшается...</p>
             <p>Осталось времени: <span id="upgrade-timer">загрузка...</span></p>
-            <button class="btn btn-primary" onclick="speedUpBuilding(${building.id})">
+            <button class="btn btn-primary" onclick="speedUpBuilding('${buildingId}')">
                 Ускорить за 10 💎
             </button>
         `;
@@ -338,7 +409,28 @@ function showBuildingModal(building) {
     } else {
         const canAfford = checkResourcesForBuilding(building.nextLevelCost);
         
+        // Получаем описание здания
+        const buildingDescriptions = {
+            main: 'Центр вашей деревни. Увеличивает скорость строительства других зданий и позволяет сносить постройки.',
+            barracks: 'Здесь обучаются пехотные войска. Чем выше уровень, тем быстрее происходит обучение.',
+            farm: 'Обеспечивает продовольствием население деревни. Каждый уровень увеличивает лимит населения на 50.',
+            warehouse: 'Увеличивает вместимость ресурсов. Защищает часть ресурсов от грабежа.',
+            wall: 'Защищает деревню от атак. Увеличивает защитную силу всех войск в деревне.',
+            lumbercamp: 'Производит древесину. Каждый уровень увеличивает производство дерева.',
+            clay_pit: 'Добывает глину. Каждый уровень увеличивает производство глины.',
+            iron_mine: 'Добывает железо. Каждый уровень увеличивает производство железа.',
+            market: 'Позволяет торговать ресурсами с другими игроками. Увеличивает скорость торговцев.',
+            tribal_hall: 'Административный центр деревни. Ограничивает максимальный уровень других зданий.',
+            smithy: 'Позволяет исследовать улучшения для войск. Увеличивает атаку и защиту ваших воинов.'
+        };
+        
+        const description = buildingDescriptions[building.building_type] || 'Описание недоступно';
+        
         content.innerHTML = `
+            <div class="building-description">
+                <p>${description}</p>
+            </div>
+            
             <div class="upgrade-info">
                 <p>Текущий уровень: ${building.level}</p>
                 <p>Следующий уровень: ${building.level + 1}</p>
@@ -389,11 +481,17 @@ function createCostDisplay(cost) {
 
 // Улучшить здание
 async function upgradeBuilding(buildingType) {
+    const villageId = getObjectId(currentVillage);
+    if (!villageId) {
+        alert('Ошибка: деревня не загружена');
+        return;
+    }
+    
     try {
         const response = await secureRequest('/api/build', {
             method: 'POST',
             body: JSON.stringify({
-                villageId: currentVillage.id,
+                villageId: villageId,
                 buildingType: buildingType
             })
         });
@@ -418,9 +516,8 @@ async function speedUpBuilding(buildingId) {
     if (!confirm('Потратить 10 кристаллов на ускорение?')) return;
     
     try {
-        const response = await fetch('/api/speed-up', {
+        const response = await secureRequest('/api/speed-up', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 actionId: buildingId,
                 type: 'building'
@@ -507,9 +604,19 @@ function showGameTab(tab) {
 
 // Загрузить казармы
 async function loadBarracks() {
+    const villageId = getObjectId(currentVillage);
+    if (!villageId) {
+        console.error('Village not loaded or has no ID!');
+        showNotification('Ошибка: деревня не загружена');
+        return;
+    }
+    
     try {
         // Загружаем войска
-        const troopsResponse = await fetch(`/api/troops/${currentVillage.id}`);
+        const troopsResponse = await fetch(`/api/troops/${villageId}`);
+        if (!troopsResponse.ok) {
+            throw new Error(`HTTP ${troopsResponse.status}: ${troopsResponse.statusText}`);
+        }
         const troops = await troopsResponse.json();
         
         // Отображаем текущие войска
@@ -559,10 +666,86 @@ async function loadBarracks() {
             trainTroops.appendChild(form);
         });
         
-        // TODO: Загрузить очередь обучения
+        // Загружаем очередь обучения
+        await loadTrainingQueue();
         
     } catch (error) {
         console.error('Ошибка загрузки казарм:', error);
+        showNotification('Ошибка загрузки казарм');
+    }
+}
+
+// Загрузить очередь обучения
+async function loadTrainingQueue() {
+    try {
+        const response = await fetch(`/api/training-queue/${currentVillage.id}`);
+        if (response.ok) {
+            const queue = await response.json();
+            displayTrainingQueue(queue);
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки очереди обучения:', error);
+    }
+}
+
+// Отобразить очередь обучения
+function displayTrainingQueue(queue) {
+    const queueElement = document.getElementById('training-queue');
+    if (!queueElement) return;
+    
+    if (queue.length === 0) {
+        queueElement.innerHTML = '<p>Очередь обучения пуста</p>';
+        return;
+    }
+    
+    queueElement.innerHTML = queue.map(item => {
+        const finishTime = new Date(item.finishTime);
+        const now = new Date();
+        const timeLeft = Math.max(0, Math.floor((finishTime - now) / 1000));
+        
+        return `
+            <div class="training-item">
+                <div class="training-info">
+                    <strong>${item.name}</strong> x${item.amount}
+                </div>
+                <div class="training-time">
+                    Завершится через: <span class="timer" data-finish="${item.finishTime}">${formatTime(timeLeft)}</span>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="speedUpTraining('${item.id}')">
+                    Ускорить за 10 💎
+                </button>
+            </div>
+        `;
+    }).join('');
+    
+    // Запускаем таймеры
+    startTimers();
+}
+
+// Ускорить обучение
+async function speedUpTraining(trainingId) {
+    if (!confirm('Потратить 10 кристаллов на ускорение обучения?')) return;
+    
+    try {
+        const response = await secureRequest('/api/speed-up', {
+            method: 'POST',
+            body: JSON.stringify({
+                actionId: trainingId,
+                type: 'training'
+            })
+        });
+        
+        if (response.ok) {
+            showNotification('Обучение ускорено!', 'success');
+            await loadTrainingQueue();
+            await loadBarracks();
+        } else {
+            const error = await response.json();
+            showNotification(error.error || 'Ошибка ускорения', 'error');
+        }
+    } catch (error) {
+        console.error('Ошибка ускорения обучения:', error);
+        showNotification('Ошибка ускорения', 'error');
     }
 }
 
@@ -575,12 +758,18 @@ async function trainTroops(troopType) {
         return;
     }
     
+    const villageId = getObjectId(currentVillage);
+    if (!villageId) {
+        alert('Ошибка: деревня не загружена');
+        return;
+    }
+    
     try {
         const response = await fetch('/api/train', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                villageId: currentVillage.id,
+                villageId: villageId,
                 troopType: troopType,
                 amount: amount
             })
@@ -592,6 +781,7 @@ async function trainTroops(troopType) {
             document.getElementById(`train-${troopType}`).value = '0';
             await loadVillage();
             await loadBarracks();
+            await loadTrainingQueue();
             showNotification(`Обучение ${amount} войск начато!`);
         } else {
             alert(data.error || 'Ошибка обучения войск');
@@ -661,20 +851,45 @@ function selectMapVillage(village) {
         Math.pow(village.y - currentVillage.y, 2)
     );
     
-    info.innerHTML = `
-        <div class="village-info-details">
-            <p><strong>Название:</strong> ${village.name}</p>
-            <p><strong>Владелец:</strong> ${village.owner}</p>
-            <p><strong>Координаты:</strong> (${village.x}, ${village.y})</p>
-            <p><strong>Очки:</strong> ${village.points || 0}</p>
-            <p><strong>Расстояние:</strong> ${distance.toFixed(1)} полей</p>
-            ${!isOwn ? `
-                <button class="btn btn-danger attack-btn" onclick="showAttackModal(${village.id})">
-                    Атаковать
-                </button>
-            ` : ''}
-        </div>
-    `;
+    // БЕЗОПАСНЫЙ способ - используем textContent и createElement
+    info.innerHTML = ''; // Очищаем
+    
+    const details = document.createElement('div');
+    details.className = 'village-info-details';
+    
+    // Создаем элементы безопасно
+    const nameP = document.createElement('p');
+    nameP.innerHTML = '<strong>Название:</strong> <span></span>';
+    nameP.querySelector('span').textContent = village.name; // textContent экранирует HTML
+    details.appendChild(nameP);
+    
+    const ownerP = document.createElement('p');
+    ownerP.innerHTML = '<strong>Владелец:</strong> <span></span>';
+    ownerP.querySelector('span').textContent = village.owner;
+    details.appendChild(ownerP);
+    
+    const coordsP = document.createElement('p');
+    coordsP.innerHTML = `<strong>Координаты:</strong> (${village.x}, ${village.y})`;
+    details.appendChild(coordsP);
+    
+    const pointsP = document.createElement('p');
+    pointsP.innerHTML = `<strong>Очки:</strong> ${village.points || 0}`;
+    details.appendChild(pointsP);
+    
+    const distanceP = document.createElement('p');
+    distanceP.innerHTML = `<strong>Расстояние:</strong> ${distance.toFixed(1)} полей`;
+    details.appendChild(distanceP);
+    
+    info.appendChild(details);
+    
+    // Добавляем кнопку атаки если нужно
+    if (!isOwn) {
+        const attackBtn = document.createElement('button');
+        attackBtn.className = 'btn btn-danger attack-btn';
+        attackBtn.textContent = 'Атаковать';
+        attackBtn.onclick = () => showAttackModal(village.id);
+        info.appendChild(attackBtn);
+    }
 }
 
 // Показать модальное окно атаки
@@ -703,8 +918,14 @@ function showAttackModal(targetVillageId) {
 
 // Загрузить войска для атаки
 async function loadAttackTroops() {
+    const villageId = getObjectId(currentVillage);
+    if (!villageId) {
+        console.error('Village not loaded or has no ID!');
+        return;
+    }
+    
     try {
-        const response = await fetch(`/api/troops/${currentVillage.id}`);
+        const response = await fetch(`/api/troops/${villageId}`);
         const troops = await response.json();
         
         const selection = document.getElementById('attack-troops-selection');
@@ -752,12 +973,18 @@ async function sendAttack() {
     
     if (!confirm(`Отправить ${totalTroops} войск в атаку?`)) return;
     
+    const villageId = getObjectId(currentVillage);
+    if (!villageId) {
+        alert('Ошибка: деревня не загружена');
+        return;
+    }
+    
     try {
         const response = await fetch('/api/attack', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                fromVillageId: currentVillage.id,
+                fromVillageId: villageId,
                 toVillageId: selectedMapVillage.id,
                 troops: troops
             })
@@ -787,36 +1014,63 @@ async function loadTribe() {
         const tribes = await response.json();
         
         const content = document.getElementById('tribe-content');
+        content.innerHTML = ''; // Очищаем
         
         // TODO: Проверить, состоит ли игрок в племени
         const userTribe = null;
         
         if (userTribe) {
-            // Показываем информацию о племени игрока
-            content.innerHTML = `
-                <div class="tribe-info">
-                    <h3>${userTribe.name} [${userTribe.tag}]</h3>
-                    <p>Лидер: ${userTribe.leader_name}</p>
-                    <p>Участников: ${userTribe.member_count}</p>
-                    <p>Очки: ${userTribe.points}</p>
-                </div>
-                
-                <h3>Чат племени</h3>
-                <div class="tribe-chat">
-                    <!-- TODO: Реализовать чат -->
-                    <p>Чат будет доступен в следующем обновлении</p>
-                </div>
-            `;
+            // Безопасное создание контента для племени игрока
+            const tribeInfo = document.createElement('div');
+            tribeInfo.className = 'tribe-info';
+            
+            const title = document.createElement('h3');
+            title.textContent = `${userTribe.name} [${userTribe.tag}]`;
+            tribeInfo.appendChild(title);
+            
+            const leader = document.createElement('p');
+            leader.textContent = `Лидер: ${userTribe.leader_name}`;
+            tribeInfo.appendChild(leader);
+            
+            const members = document.createElement('p');
+            members.textContent = `Участников: ${userTribe.member_count}`;
+            tribeInfo.appendChild(members);
+            
+            const points = document.createElement('p');
+            points.textContent = `Очки: ${userTribe.points}`;
+            tribeInfo.appendChild(points);
+            
+            content.appendChild(tribeInfo);
+            
+            // Добавляем чат
+            const chatTitle = document.createElement('h3');
+            chatTitle.textContent = 'Чат племени';
+            content.appendChild(chatTitle);
+            
+            const chatDiv = document.createElement('div');
+            chatDiv.className = 'tribe-chat';
+            chatDiv.innerHTML = '<p>Чат будет доступен в следующем обновлении</p>';
+            content.appendChild(chatDiv);
+            
         } else {
             // Показываем список племен и форму создания
-            content.innerHTML = `
-                <div class="tribe-actions">
-                    <button class="btn btn-primary" onclick="showCreateTribeForm()">
-                        Создать племя (1000 каждого ресурса)
-                    </button>
-                </div>
-                
-                <div id="create-tribe-form" class="create-tribe-form" style="display: none;">
+            const actions = document.createElement('div');
+            actions.className = 'tribe-actions';
+            
+            const createBtn = document.createElement('button');
+            createBtn.className = 'btn btn-primary';
+            createBtn.textContent = 'Создать племя (1000 каждого ресурса)';
+            createBtn.onclick = showCreateTribeForm;
+            actions.appendChild(createBtn);
+            
+            content.appendChild(actions);
+            
+            // Форма создания племени
+            const createForm = document.createElement('div');
+            createForm.id = 'create-tribe-form';
+            createForm.className = 'create-tribe-form';
+            createForm.style.display = 'none';
+            createForm.innerHTML = `
                     <h3>Создать новое племя</h3>
                     <div class="form-group">
                         <label>Название племени:</label>
@@ -828,28 +1082,51 @@ async function loadTribe() {
                     </div>
                     <button class="btn btn-primary" onclick="createTribe()">Создать</button>
                     <button class="btn" onclick="hideCreateTribeForm()">Отмена</button>
-                </div>
-                
-                <h3>Существующие племена</h3>
-                <div class="tribes-list">
-                    ${tribes.map(tribe => `
-                        <div class="tribe-card">
-                            <div class="tribe-info">
-                                <h4>${tribe.name}</h4>
-                                <div class="tribe-tag">[${tribe.tag}]</div>
-                                <div class="tribe-stats">
-                                    Лидер: ${tribe.leader_name} | 
-                                    Участников: ${tribe.member_count} | 
-                                    Очки: ${tribe.points}
-                                </div>
-                            </div>
-                            <button class="btn" onclick="joinTribe(${tribe.id})">
-                                Присоединиться
-                            </button>
-                        </div>
-                    `).join('')}
-                </div>
             `;
+            content.appendChild(createForm);
+            
+            // Список существующих племен
+            const listTitle = document.createElement('h3');
+            listTitle.textContent = 'Существующие племена';
+            content.appendChild(listTitle);
+            
+            const tribesList = document.createElement('div');
+            tribesList.className = 'tribes-list';
+            
+            // Безопасное создание карточек племен
+            tribes.forEach(tribe => {
+                const card = document.createElement('div');
+                card.className = 'tribe-card';
+                
+                const info = document.createElement('div');
+                info.className = 'tribe-info';
+                
+                const name = document.createElement('h4');
+                name.textContent = tribe.name;
+                info.appendChild(name);
+                
+                const tag = document.createElement('div');
+                tag.className = 'tribe-tag';
+                tag.textContent = `[${tribe.tag}]`;
+                info.appendChild(tag);
+                
+                const stats = document.createElement('div');
+                stats.className = 'tribe-stats';
+                stats.textContent = `Лидер: ${tribe.leader_name} | Участников: ${tribe.member_count} | Очки: ${tribe.points}`;
+                info.appendChild(stats);
+                
+                card.appendChild(info);
+                
+                const joinBtn = document.createElement('button');
+                joinBtn.className = 'btn';
+                joinBtn.textContent = 'Присоединиться';
+                joinBtn.onclick = () => joinTribe(tribe.id);
+                card.appendChild(joinBtn);
+                
+                tribesList.appendChild(card);
+            });
+            
+            content.appendChild(tribesList);
         }
         
     } catch (error) {
@@ -974,23 +1251,59 @@ async function selectPaymentMethod() {
 function showCryptoPaymentModal(paymentData) {
     const modal = document.createElement('div');
     modal.className = 'modal active';
-    modal.innerHTML = `
-        <div class="modal-header">
-            <h3>Оплата криптовалютой</h3>
-            <button class="modal-close" onclick="closeModal()">×</button>
-        </div>
-        <div class="modal-content">
-            <p><strong>Отправьте точную сумму:</strong></p>
-            <p class="crypto-amount">${paymentData.amount} ${paymentData.currency}</p>
-            <p><strong>На адрес:</strong></p>
-            <p class="crypto-address">${escapeHtml(paymentData.address)}</p>
-            <button class="btn" onclick="copyToClipboard('${escapeHtml(paymentData.address)}')">
-                📋 Скопировать адрес
-            </button>
-            <p class="warning">⚠️ Отправляйте только ${paymentData.currency}! Другие валюты будут потеряны.</p>
-            <p>После отправки платеж будет обработан автоматически в течение 10-30 минут.</p>
-        </div>
-    `;
+    
+    const header = document.createElement('div');
+    header.className = 'modal-header';
+    
+    const title = document.createElement('h3');
+    title.textContent = 'Оплата криптовалютой';
+    header.appendChild(title);
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'modal-close';
+    closeBtn.textContent = '×';
+    closeBtn.onclick = closeModal;
+    header.appendChild(closeBtn);
+    
+    modal.appendChild(header);
+    
+    const content = document.createElement('div');
+    content.className = 'modal-content';
+    
+    const amountP = document.createElement('p');
+    amountP.innerHTML = '<strong>Отправьте точную сумму:</strong>';
+    content.appendChild(amountP);
+    
+    const amountValue = document.createElement('p');
+    amountValue.className = 'crypto-amount';
+    amountValue.textContent = `${paymentData.amount} ${paymentData.currency}`;
+    content.appendChild(amountValue);
+    
+    const addressP = document.createElement('p');
+    addressP.innerHTML = '<strong>На адрес:</strong>';
+    content.appendChild(addressP);
+    
+    const addressValue = document.createElement('p');
+    addressValue.className = 'crypto-address';
+    addressValue.textContent = paymentData.address; // textContent безопасен
+    content.appendChild(addressValue);
+    
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn';
+    copyBtn.textContent = '📋 Скопировать адрес';
+    copyBtn.onclick = () => copyToClipboard(paymentData.address);
+    content.appendChild(copyBtn);
+    
+    const warning = document.createElement('p');
+    warning.className = 'warning';
+    warning.textContent = `⚠️ Отправляйте только ${paymentData.currency}! Другие валюты будут потеряны.`;
+    content.appendChild(warning);
+    
+    const info = document.createElement('p');
+    info.textContent = 'После отправки платеж будет обработан автоматически в течение 10-30 минут.';
+    content.appendChild(info);
+    
+    modal.appendChild(content);
     
     document.body.appendChild(modal);
     document.getElementById('modal-overlay').classList.add('active');
@@ -1082,6 +1395,17 @@ function showNotification(message) {
 // Периодическое обновление данных
 async function updateGameData() {
     try {
+        // Обновляем данные пользователя (включая кристаллы)
+        const userResponse = await fetch('/api/user');
+        if (userResponse.ok) {
+            const userData = await userResponse.json();
+            if (userData && userData.crystals !== undefined) {
+                currentUser.crystals = userData.crystals;
+                document.getElementById('crystals-amount').textContent = currentUser.crystals;
+            }
+        }
+        
+        // Обновляем деревню
         await loadVillage();
         
         // Обновляем текущую вкладку
@@ -1094,6 +1418,7 @@ async function updateGameData() {
         }
     } catch (error) {
         console.error('Ошибка обновления данных:', error);
+        // Не показываем уведомление при ошибке автообновления, чтобы не спамить пользователя
     }
 }
 
@@ -1110,6 +1435,33 @@ function formatTime(seconds) {
     } else {
         return `${secs}с`;
     }
+}
+
+// Запустить таймеры
+function startTimers() {
+    const timers = document.querySelectorAll('.timer');
+    
+    timers.forEach(timer => {
+        const finishTime = new Date(timer.dataset.finish);
+        
+        const updateTimer = () => {
+            const now = new Date();
+            const remaining = Math.max(0, Math.floor((finishTime - now) / 1000));
+            
+            if (remaining === 0) {
+                timer.textContent = 'Завершено!';
+                if (timer.parentElement) {
+                    timer.parentElement.style.color = '#4caf50';
+                }
+                return;
+            }
+            
+            timer.textContent = formatTime(remaining);
+            setTimeout(updateTimer, 1000);
+        };
+        
+        updateTimer();
+    });
 }
 
 // === ИНИЦИАЛИЗАЦИЯ ===

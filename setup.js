@@ -33,7 +33,6 @@ dirs.forEach(dir => {
 const requiredFiles = [
     'package.json',
     'server/server.js',
-    'server/database.js',
     'server/gameLogic.js',
     'public/index.html',
     'public/style.css',
