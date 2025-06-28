@@ -76,6 +76,14 @@ function requireAuth(req, res, next) {
     next();
 }
 
+// Middleware для добавления поля id к объектам MongoDB
+function addIdField(obj) {
+    if (obj && obj._id) {
+        obj.id = obj._id.toString();
+    }
+    return obj;
+}
+
 // === АВТОРИЗАЦИЯ ===
 
 // Регистрация
@@ -187,10 +195,10 @@ app.get('/api/village', requireAuth, async (req, res) => {
         if (!village) {
             const villageId = await gameLogic.createVillage(req.userIdObject, 'Моя деревня');
             const newVillage = await gameLogic.getVillage(req.userIdObject, villageId);
-            res.json(newVillage);
+            res.json(addIdField(newVillage));
         } else {
             const updated = await gameLogic.updateVillageResources(village);
-            res.json(updated);
+            res.json(addIdField(updated));
         }
     } catch (error) {
         logger.error('Ошибка получения деревни:', error);

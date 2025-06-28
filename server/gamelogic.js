@@ -183,6 +183,7 @@ async function getBuildings(villageId) {
     const buildings = await Building.find({ village_id: id }).lean();
     return buildings.map(b => ({
         ...b,
+        id: b._id.toString(),
         name: BUILDING_TYPES[b.building_type].name,
         nextLevelCost: calculateBuildingCost(b.building_type, b.level),
         buildTime: calculateBuildTime(b.building_type, b.level + 1),
@@ -228,6 +229,7 @@ async function getTroops(villageId) {
     const troops = await Troop.find({ village_id: id }).lean();
     return troops.map(t => ({
         ...t,
+        id: t._id.toString(),
         name: TROOP_TYPES[t.troop_type].name,
         stats: {
             attack: TROOP_TYPES[t.troop_type].attack,

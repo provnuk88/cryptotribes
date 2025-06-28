@@ -1,3 +1,8 @@
+// Функция для получения ID объекта (поддерживает и id и _id)
+function getObjectId(obj) {
+    return obj?.id || obj?._id || null;
+}
+
 // Глобальные переменные
 let currentUser = null;
 let currentVillage = null;
@@ -202,11 +207,16 @@ async function initGame() {
         // Получаем данные пользователя
         const userResponse = await fetch('/api/user');
         const userData = await userResponse.json();
-        currentUser = userData;
-        csrfToken = userData.csrfToken; // Обновляем CSRF токен
+        currentUser = {
+            ...userData,
+            userId: userData.userId,
+            username: userData.username,
+            crystals: userData.crystals || 0
+        };
+        csrfToken = userData.csrfToken;
         
-        // Обновляем отображение кристаллов
-        document.getElementById('crystals-amount').textContent = userData.crystals || 0;
+        // Сразу обновляем отображение кристаллов
+        document.getElementById('crystals-amount').textContent = currentUser.crystals;
         
         // Загружаем деревню
         await loadVillage();
@@ -257,19 +267,20 @@ function updateResources(village) {
         document.getElementById('food-production').style.color = foodProd >= 0 ? '#4caf50' : '#f44336';
     }
     
-    // TODO: Получить кристаллы из данных пользователя
-    document.getElementById('crystals-amount').textContent = '100';
+    // Обновляем кристаллы из данных пользователя, а не из деревни
+    if (currentUser && currentUser.crystals !== undefined) {
+        document.getElementById('crystals-amount').textContent = currentUser.crystals;
+    }
 }
 
 // Загрузить здания
 async function loadBuildings() {
-    // Защита от некорректного villageId
-    if (!currentVillage || !(currentVillage.id || currentVillage._id)) {
-        console.error('Village not loaded!');
+    const villageId = getObjectId(currentVillage);
+    if (!villageId) {
+        console.error('Village not loaded or has no ID!');
         return;
     }
-    // Универсально поддерживаем id и _id
-    const villageId = currentVillage.id || currentVillage._id;
+    
     try {
         const response = await fetch(`/api/buildings/${villageId}`);
         const buildings = await response.json();
@@ -410,11 +421,17 @@ function createCostDisplay(cost) {
 
 // Улучшить здание
 async function upgradeBuilding(buildingType) {
+    const villageId = getObjectId(currentVillage);
+    if (!villageId) {
+        alert('Ошибка: деревня не загружена');
+        return;
+    }
+    
     try {
         const response = await secureRequest('/api/build', {
             method: 'POST',
             body: JSON.stringify({
-                villageId: currentVillage.id,
+                villageId: villageId,
                 buildingType: buildingType
             })
         });
@@ -528,9 +545,15 @@ function showGameTab(tab) {
 
 // Загрузить казармы
 async function loadBarracks() {
+    const villageId = getObjectId(currentVillage);
+    if (!villageId) {
+        console.error('Village not loaded or has no ID!');
+        return;
+    }
+    
     try {
         // Загружаем войска
-        const troopsResponse = await fetch(`/api/troops/${currentVillage.id}`);
+        const troopsResponse = await fetch(`/api/troops/${villageId}`);
         const troops = await troopsResponse.json();
         
         // Отображаем текущие войска
@@ -596,12 +619,18 @@ async function trainTroops(troopType) {
         return;
     }
     
+    const villageId = getObjectId(currentVillage);
+    if (!villageId) {
+        alert('Ошибка: деревня не загружена');
+        return;
+    }
+    
     try {
         const response = await fetch('/api/train', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                villageId: currentVillage.id,
+                villageId: villageId,
                 troopType: troopType,
                 amount: amount
             })
@@ -724,8 +753,14 @@ function showAttackModal(targetVillageId) {
 
 // Загрузить войска для атаки
 async function loadAttackTroops() {
+    const villageId = getObjectId(currentVillage);
+    if (!villageId) {
+        console.error('Village not loaded or has no ID!');
+        return;
+    }
+    
     try {
-        const response = await fetch(`/api/troops/${currentVillage.id}`);
+        const response = await fetch(`/api/troops/${villageId}`);
         const troops = await response.json();
         
         const selection = document.getElementById('attack-troops-selection');
@@ -773,12 +808,18 @@ async function sendAttack() {
     
     if (!confirm(`Отправить ${totalTroops} войск в атаку?`)) return;
     
+    const villageId = getObjectId(currentVillage);
+    if (!villageId) {
+        alert('Ошибка: деревня не загружена');
+        return;
+    }
+    
     try {
         const response = await fetch('/api/attack', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                fromVillageId: currentVillage.id,
+                fromVillageId: villageId,
                 toVillageId: selectedMapVillage.id,
                 troops: troops
             })
