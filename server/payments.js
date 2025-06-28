@@ -401,64 +401,6 @@ async function applyPromoCode(userId, code) {
     }
 }
 
-// === ТАБЛИЦЫ ДЛЯ ПЛАТЕЖЕЙ (добавить в database.js) ===
-const paymentTables = `
--- Таблица платежей
-CREATE TABLE IF NOT EXISTS payments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    transaction_id TEXT UNIQUE NOT NULL,
-    amount DECIMAL(10, 2) NOT NULL,
-    currency TEXT NOT NULL,
-    crystals INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    payment_method TEXT NOT NULL,
-    package_id TEXT,
-    payment_address TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    completed_at DATETIME,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-
--- История кристаллов
-CREATE TABLE IF NOT EXISTS crystal_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    amount INTEGER NOT NULL,
-    type TEXT NOT NULL,
-    description TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-
--- Промокоды
-CREATE TABLE IF NOT EXISTS promo_codes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    code TEXT UNIQUE NOT NULL,
-    crystals INTEGER NOT NULL,
-    description TEXT,
-    uses_left INTEGER,
-    expires_at DATETIME,
-    active INTEGER DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Использование промокодов
-CREATE TABLE IF NOT EXISTS promo_uses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    promo_id INTEGER NOT NULL,
-    used_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (promo_id) REFERENCES promo_codes(id),
-    UNIQUE(user_id, promo_id)
-);
-
--- Индексы
-CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
-CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
-CREATE INDEX IF NOT EXISTS idx_crystal_history_user ON crystal_history(user_id);
-`;
 
 module.exports = {
     PAYMENT_CONFIG,
@@ -471,6 +413,5 @@ module.exports = {
     cancelPayment,
     getUserPaymentHistory,
     checkPaymentLimits,
-    applyPromoCode,
-    paymentTables
+    applyPromoCode
 };

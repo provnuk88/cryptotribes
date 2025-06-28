@@ -256,9 +256,8 @@ app.get('/api/buildings/:villageId', requireAuth, async (req, res) => {
 // Построить/улучшить здание
 app.post('/api/build', requireAuth, async (req, res) => {
     const { villageId, buildingType } = req.body;
-    
     try {
-         const result = await gameLogic.upgradeBuilding(req.userIdObject, villageId, buildingType);
+        const result = await gameLogic.upgradeBuilding(req.userIdObject, villageId, buildingType);
         res.json(result);
     } catch (error) {
         logger.error('Ошибка строительства:', error);
@@ -281,7 +280,6 @@ app.get('/api/troops/:villageId', requireAuth, async (req, res) => {
 // Обучить войска
 app.post('/api/train', requireAuth, async (req, res) => {
     const { villageId, troopType, amount } = req.body;
-    
     try {
         const result = await gameLogic.trainTroops(req.userIdObject, villageId, troopType, amount);
         res.json(result);
@@ -305,7 +303,6 @@ app.get('/api/map', requireAuth, async (req, res) => {
 // Атаковать деревню
 app.post('/api/attack', requireAuth, async (req, res) => {
     const { fromVillageId, toVillageId, troops } = req.body;
-    
     try {
         const result = await gameLogic.attackVillage(req.userIdObject, fromVillageId, toVillageId, troops);
         res.json(result);
@@ -320,7 +317,6 @@ app.post('/api/attack', requireAuth, async (req, res) => {
 // Создать племя
 app.post('/api/tribe/create', requireAuth, async (req, res) => {
     const { name, tag } = req.body;
-    
     try {
         const result = await gameLogic.createTribe(req.userIdObject, name, tag);
         res.json(result);
@@ -344,7 +340,6 @@ app.get('/api/tribes', requireAuth, async (req, res) => {
 // Присоединиться к племени
 app.post('/api/tribe/join', requireAuth, async (req, res) => {
     const { tribeId } = req.body;
-    
     try {
         const result = await gameLogic.joinTribe(req.userIdObject, tribeId);
         res.json(result);
@@ -366,11 +361,9 @@ app.get('/api/shop/packages', (req, res) => {
 // Создать платеж
 app.post('/api/shop/create-payment', requireAuth, async (req, res) => {
     const { packageId, method, currency } = req.body;
-    
     try {
         // Проверяем лимиты
         await checkPaymentLimits(req.userIdObject);
-        
         let result;
         if (method === 'card') {
             const user = await User.findById(req.userIdObject).lean();
@@ -380,7 +373,6 @@ app.post('/api/shop/create-payment', requireAuth, async (req, res) => {
         } else {
             return res.status(400).json({ error: 'Неверный метод оплаты' });
         }
-        
         res.json(result);
     } catch (error) {
         logger.error('Payment creation error', { error: error.message });
@@ -408,61 +400,13 @@ app.get('/api/shop/history', requireAuth, async (req, res) => {
 // Применить промокод
 app.post('/api/shop/promo', requireAuth, async (req, res) => {
     const { code } = req.body;
-    
     if (!code) {
         return res.status(400).json({ error: 'Укажите промокод' });
     }
-    
     try {
         const result = await applyPromoCode(req.userIdObject, code);
         res.json(result);
     } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-// Административный эндпоинт для обновления ресурсов всех деревень
-app.post('/api/admin/update-all-resources', requireAuth, async (req, res) => {
-    try {
-        // Проверяем, является ли пользователь администратором (можно добавить проверку роли)
-        const user = await User.findById(req.userIdObject).lean();
-        if (!user || user.username !== 'admin') {
-            return res.status(403).json({ error: 'Доступ запрещен' });
-        }
-        
-        const result = await gameLogic.updateAllVillagesResources();
-        res.json({
-            success: true,
-            message: 'Ресурсы всех деревень обновлены',
-            result
-        });
-    } catch (error) {
-        logger.error('Ошибка обновления ресурсов всех деревень:', error);
-        res.status(500).json({ error: 'Ошибка сервера' });
-    }
-});
-
-// Купить кристаллы (заглушка)
-app.post('/api/shop/buy-crystals', requireAuth, async (req, res) => {
-    const { amount } = req.body;
-    
-    // В реальной игре здесь была бы интеграция с платежной системой
-    res.json({ 
-        success: false, 
-        message: 'Используйте /api/shop/create-payment для создания платежа',
-        amount: amount
-    });
-});
-
-// Ускорить действие за кристаллы
-app.post('/api/speed-up', requireAuth, async (req, res) => {
-    const { actionId, type } = req.body;
-    
-    try {
-        const result = await gameLogic.speedUpAction(req.userIdObject, actionId, type);
-        res.status(200).json(result);
-    } catch (error) {
-        logger.error('Ошибка ускорения:', error);
         res.status(400).json({ error: error.message });
     }
 });
@@ -485,6 +429,33 @@ app.post('/api/admin/generate-barbarians', requireAuth, async (req, res) => {
 });
 
 // === ИГРОВОЙ ЦИКЛ ===
+
+// Обновление ресурсов каждую минуту
+if (process.env.NODE_ENV !== 'test') {
+    setInterval(async () => {
+        try {
+            performance.start('resource-update');
+            await gameLogic.updateAllVillagesResources();
+            const duration = performance.end('resource-update');
+            gameLogger.resourcesUpdated('all', duration);
+
+            performance.start('construction-queue');
+            await gameLogic.processConstructionQueue();
+            performance.end('construction-queue');
+
+            performance.start('training-queue');
+            await gameLogic.processTrainingQueue();
+            performance.end('training-queue');
+
+            performance.start('process-attacks');
+            await gameLogic.processAttacks();
+            performance.end('process-attacks');
+
+        } catch (error) {
+            logger.error('Ошибка игрового цикла:', error);
+        }
+    }, 60000); // Каждую минуту
+}
 
 // Health check endpoint
 app.get('/health', (req, res) => {
