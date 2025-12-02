@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7
+    container_name: cryptotribes-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: cryptotribes123
+      MONGO_INITDB_DATABASE: cryptotribes
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - cryptotribes-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Bull.js queue
+  redis:
+    image: redis:7-alpine
+    container_name: cryptotribes-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - cryptotribes-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API Server
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: cryptotribes-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      MONGODB_URI: mongodb://admin:cryptotribes123@mongodb:27017/cryptotribes?authSource=admin
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: cryptotribes-jwt-secret-change-in-production
+      JWT_EXPIRES_IN: 7d
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cryptotribes-network
+    command: npm run dev
+
+  # Frontend Vite Dev Server
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: cryptotribes-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://localhost:3000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - cryptotribes-network
+    command: npm run dev -- --host
+
+volumes:
+  mongodb_data:
+  redis_data:
+
+networks:
+  cryptotribes-network:
+    driver: bridge

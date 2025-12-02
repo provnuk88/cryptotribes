@@ -1,0 +1,1503 @@
+{
+  "project_name": "cryptotribes",
+  "architecture_pattern": "Layered Monolith with Feature Modules - Feature-based modules (battles, tribes, territories) with service layer, repository pattern, and event-driven decoupling for cross-cutting concerns. Optimized for solo developer MVP delivery while maintaining clean separation for future microservices extraction.",
+  "structure": {
+    "root_files": [
+      {
+        "name": "package.json",
+        "purpose": "NPM dependencies and scripts - Express, Mongoose, Bull, Redis, Stripe, ethers, wagmi"
+      },
+      {
+        "name": ".env.example",
+        "purpose": "Environment variable template - MongoDB URI, Redis URL, Stripe keys, JWT secret, admin wallets"
+      },
+      {
+        "name": "docker-compose.yml",
+        "purpose": "Local development environment - MongoDB, Redis, backend, frontend containers"
+      },
+      {
+        "name": "Dockerfile",
+        "purpose": "Backend production container image"
+      },
+      {
+        "name": ".gitignore",
+        "purpose": "Exclude node_modules, .env, logs, build artifacts"
+      },
+      {
+        "name": "README.md",
+        "purpose": "Project overview, setup instructions, tech stack documentation"
+      },
+      {
+        "name": "tsconfig.json",
+        "purpose": "TypeScript configuration (optional, can use JS for faster MVP)"
+      }
+    ],
+    "directories": [
+      {
+        "name": "server",
+        "purpose": "Backend application - all game logic, API, services, data models",
+        "subdirectories": [
+          {
+            "name": "config",
+            "purpose": "Configuration management and constants",
+            "files": [
+              {
+                "name": "database.js",
+                "purpose": "MongoDB connection setup with Mongoose, transaction helpers",
+                "exports": ["connectDB", "startTransaction", "commitTransaction", "abortTransaction"],
+                "dependencies": ["mongoose"]
+              },
+              {
+                "name": "redis.js",
+                "purpose": "Redis connection for Bull.js queue and future caching",
+                "exports": ["redisClient", "createQueue"],
+                "dependencies": ["ioredis", "bull"]
+              },
+              {
+                "name": "constants.js",
+                "purpose": "Single source of truth for all game parameters - unit stats, building costs, terrain modifiers, formulas",
+                "exports": ["UNIT_STATS", "BUILDING_COSTS", "TERRAIN_MODIFIERS", "FORMATION_BONUSES", "VP_VALUES", "ECONOMY_PARAMS"],
+                "dependencies": []
+              },
+              {
+                "name": "stripe.js",
+                "purpose": "Stripe payment processor configuration",
+                "exports": ["stripeClient", "createPaymentIntent", "verifyWebhook"],
+                "dependencies": ["stripe"]
+              },
+              {
+                "name": "web3.js",
+                "purpose": "Web3 wallet authentication, USDT transfers, signature verification",
+                "exports": ["verifyWalletSignature", "checkWalletAge", "sendUSDT"],
+                "dependencies": ["ethers", "wagmi"]
+              }
+            ]
+          },
+          {
+            "name": "middlewares",
+            "purpose": "Express middleware for cross-cutting concerns",
+            "files": [
+              {
+                "name": "auth.js",
+                "purpose": "JWT authentication, wallet signature verification, session management",
+                "exports": ["authenticate", "optionalAuth", "requireAdmin"],
+                "dependencies": ["jsonwebtoken", "server/config/web3"]
+              },
+              {
+                "name": "validation.js",
+                "purpose": "Request validation schemas using Joi or express-validator",
+                "exports": ["validateBody", "validateParams", "validateQuery"],
+                "dependencies": ["joi"]
+              },
+              {
+                "name": "errorHandler.js",
+                "purpose": "Centralized error handling, logging, and response formatting",
+                "exports": ["errorHandler", "asyncHandler", "NotFoundError", "ValidationError"],
+                "dependencies": ["server/utils/logger"]
+              },
+              {
+                "name": "rateLimiter.js",
+                "purpose": "Rate limiting per user/IP - 100 actions per hour per player",
+                "exports": ["rateLimiter", "strictRateLimiter"],
+                "dependencies": ["express-rate-limit"]
+              },
+              {
+                "name": "security.js",
+                "purpose": "Helmet, CORS, XSS protection, request sanitization",
+                "exports": ["securityMiddleware", "corsOptions"],
+                "dependencies": ["helmet", "cors", "express-mongo-sanitize"]
+              }
+            ]
+          },
+          {
+            "name": "models",
+            "purpose": "Mongoose schemas for MongoDB collections",
+            "files": [
+              {
+                "name": "User.js",
+                "purpose": "User model - wallet, gold, army, buildings, training queue, VP, behavioral data",
+                "exports": ["User"],
+                "dependencies": ["mongoose"]
+              },
+              {
+                "name": "Tribe.js",
+                "purpose": "Tribe model - members, roles, treasury, VP, territories, war declarations",
+                "exports": ["Tribe"],
+                "dependencies": ["mongoose"]
+              },
+              {
+                "name": "Territory.js",
+                "purpose": "Territory model - ownership, garrison, NPC defenders, VP/gold generation, shields",
+                "exports": ["Territory"],
+                "dependencies": ["mongoose"]
+              },
+              {
+                "name": "Battle.js",
+                "purpose": "Battle history log - armies, formations, power calculations, casualties, loot, VP",
+                "exports": ["Battle"],
+                "dependencies": ["mongoose"]
+              },
+              {
+                "name": "Season.js",
+                "purpose": "Season metadata - start/end dates, player count, prize pool, events, status",
+                "exports": ["Season"],
+                "dependencies": ["mongoose"]
+              },
+              {
+                "name": "Payment.js",
+                "purpose": "Payment records - entry fees, prize distributions, Stripe/USDT transactions",
+                "exports": ["Payment"],
+                "dependencies": ["mongoose"]
+              },
+              {
+                "name": "AdminAuditLog.js",
+                "purpose": "Audit trail for admin actions - bans, compensations, rollbacks, reviews",
+                "exports": ["AdminAuditLog"],
+                "dependencies": ["mongoose"]
+              },
+              {
+                "name": "BehavioralFlag.js",
+                "purpose": "Anti-cheat tracking - login patterns, IP addresses, browser fingerprints, multi-account flags",
+                "exports": ["BehavioralFlag"],
+                "dependencies": ["mongoose"]
+              }
+            ]
+          },
+          {
+            "name": "modules",
+            "purpose": "Feature-based business logic modules following folder-by-feature pattern",
+            "subdirectories": [
+              {
+                "name": "auth",
+                "purpose": "Authentication and wallet connection",
+                "files": [
+                  {
+                    "name": "auth.service.js",
+                    "purpose": "Wallet signature verification, session creation, JWT generation",
+                    "exports": ["connectWallet", "verifySignature", "generateAuthToken", "logout"],
+                    "dependencies": ["server/config/web3", "server/models/User"]
+                  },
+                  {
+                    "name": "auth.controller.js",
+                    "purpose": "HTTP handlers for auth endpoints",
+                    "exports": ["connectWalletHandler", "logoutHandler"],
+                    "dependencies": ["server/modules/auth/auth.service"]
+                  },
+                  {
+                    "name": "auth.routes.js",
+                    "purpose": "Auth API routes - POST /auth/connect, POST /auth/logout",
+                    "exports": ["authRouter"],
+                    "dependencies": ["express", "server/modules/auth/auth.controller"]
+                  }
+                ]
+              },
+              {
+                "name": "users",
+                "purpose": "User profile and stats management",
+                "files": [
+                  {
+                    "name": "user.service.js",
+                    "purpose": "User CRUD operations, profile updates, stats aggregation",
+                    "exports": ["getUserById", "updateUsername", "getUserStats", "getUserArmy"],
+                    "dependencies": ["server/models/User"]
+                  },
+                  {
+                    "name": "user.controller.js",
+                    "purpose": "HTTP handlers for user endpoints",
+                    "exports": ["getMeHandler", "getUserHandler", "updateMeHandler"],
+                    "dependencies": ["server/modules/users/user.service"]
+                  },
+                  {
+                    "name": "user.routes.js",
+                    "purpose": "User API routes - GET /users/me, GET /users/:id, PUT /users/me",
+                    "exports": ["userRouter"],
+                    "dependencies": ["express", "server/modules/users/user.controller", "server/middlewares/auth"]
+                  }
+                ]
+              },
+              {
+                "name": "buildings",
+                "purpose": "Building upgrade system",
+                "files": [
+                  {
+                    "name": "building.service.js",
+                    "purpose": "Building upgrade logic, cost calculation, timer management",
+                    "exports": ["upgradeBuilding", "completeUpgrade", "getBuildingStatus", "canUpgrade"],
+                    "dependencies": ["server/models/User", "server/config/constants"]
+                  },
+                  {
+                    "name": "building.controller.js",
+                    "purpose": "HTTP handlers for building endpoints",
+                    "exports": ["upgradeBuildingHandler", "getBuildingsHandler"],
+                    "dependencies": ["server/modules/buildings/building.service"]
+                  },
+                  {
+                    "name": "building.routes.js",
+                    "purpose": "Building API routes - POST /buildings/:type/upgrade, GET /buildings",
+                    "exports": ["buildingRouter"],
+                    "dependencies": ["express", "server/modules/buildings/building.controller", "server/middlewares/auth"]
+                  }
+                ]
+              },
+              {
+                "name": "units",
+                "purpose": "Unit training and army management",
+                "files": [
+                  {
+                    "name": "unit.service.js",
+                    "purpose": "Unit training queue, cost calculation, completion processing",
+                    "exports": ["trainUnits", "completeTraining", "getTrainingQueue", "getArmyComposition"],
+                    "dependencies": ["server/models/User", "server/config/constants"]
+                  },
+                  {
+                    "name": "unit.controller.js",
+                    "purpose": "HTTP handlers for unit endpoints",
+                    "exports": ["trainUnitsHandler", "getUnitsHandler"],
+                    "dependencies": ["server/modules/units/unit.service"]
+                  },
+                  {
+                    "name": "unit.routes.js",
+                    "purpose": "Unit API routes - POST /units/train, GET /units",
+                    "exports": ["unitRouter"],
+                    "dependencies": ["express", "server/modules/units/unit.controller", "server/middlewares/auth"]
+                  }
+                ]
+              },
+              {
+                "name": "territories",
+                "purpose": "Territory management, garrison, shields",
+                "files": [
+                  {
+                    "name": "territory.service.js",
+                    "purpose": "Territory queries, garrison management, shield activation, ownership tracking",
+                    "exports": ["getAllTerritories", "getTerritoryById", "assignGarrison", "activateShield", "transferOwnership"],
+                    "dependencies": ["server/models/Territory", "server/models/User", "server/config/constants"]
+                  },
+                  {
+                    "name": "territory.controller.js",
+                    "purpose": "HTTP handlers for territory endpoints",
+                    "exports": ["getTerritoriesHandler", "getTerritoryHandler", "garrisonHandler", "shieldHandler"],
+                    "dependencies": ["server/modules/territories/territory.service"]
+                  },
+                  {
+                    "name": "territory.routes.js",
+                    "purpose": "Territory API routes - GET /territories, GET /territories/:id, POST /territories/:id/garrison, POST /territories/:id/shield",
+                    "exports": ["territoryRouter"],
+                    "dependencies": ["express", "server/modules/territories/territory.controller", "server/middlewares/auth"]
+                  }
+                ]
+              },
+              {
+                "name": "battles",
+                "purpose": "Combat system - attack initiation, battle queue, resolution",
+                "subdirectories": [
+                  {
+                    "name": "services",
+                    "purpose": "Battle business logic split into focused services",
+                    "files": [
+                      {
+                        "name": "combatCalculator.js",
+                        "purpose": "Pure functions for battle power calculation, counter bonuses, terrain modifiers, casualties - CRITICAL PATH",
+                        "exports": ["calculateBattlePower", "applyCasualties", "determineCasualtyDistribution", "calculateLoot"],
+                        "dependencies": ["server/config/constants"]
+                      },
+                      {
+                        "name": "battleQueue.js",
+                        "purpose": "Bull.js queue management for sequential battle processing",
+                        "exports": ["addBattleToQueue", "processBattleJob", "getBattleQueueStatus"],
+                        "dependencies": ["bull", "server/config/redis"]
+                      },
+                      {
+                        "name": "battleResolver.js",
+                        "purpose": "Orchestrates battle resolution - validates armies, calls calculator, updates database with transaction",
+                        "exports": ["resolveBattle", "validateAttack", "applyBattleResults"],
+                        "dependencies": ["server/modules/battles/services/combatCalculator", "server/models/Battle", "server/models/User", "server/models/Territory", "server/config/database"]
+                      }
+                    ]
+                  }
+                ],
+                "files": [
+                  {
+                    "name": "battle.service.js",
+                    "purpose": "High-level battle operations - initiate attack, get battle history, retrieve battle details",
+                    "exports": ["initiateAttack", "getBattleHistory", "getBattleById"],
+                    "dependencies": ["server/modules/battles/services/battleQueue", "server/modules/battles/services/battleResolver", "server/models/Battle"]
+                  },
+                  {
+                    "name": "battle.controller.js",
+                    "purpose": "HTTP handlers for battle endpoints",
+                    "exports": ["attackTerritoryHandler", "getBattlesHandler", "getBattleHandler"],
+                    "dependencies": ["server/modules/battles/battle.service"]
+                  },
+                  {
+                    "name": "battle.routes.js",
+                    "purpose": "Battle API routes - POST /territories/:id/attack, GET /battles, GET /battles/:id",
+                    "exports": ["battleRouter"],
+                    "dependencies": ["express", "server/modules/battles/battle.controller", "server/middlewares/auth"]
+                  }
+                ]
+              },
+              {
+                "name": "tribes",
+                "purpose": "Tribe system - formation, roles, treasury, voting, war declarations",
+                "files": [
+                  {
+                    "name": "tribe.service.js",
+                    "purpose": "Tribe CRUD, member management, treasury operations, voting logic, war declarations",
+                    "exports": ["createTribe", "joinTribe", "kickMember", "voteOnAction", "declareWar", "donateTreasury", "withdrawTreasury"],
+                    "dependencies": ["server/models/Tribe", "server/models/User"]
+                  },
+                  {
+                    "name": "tribe.controller.js",
+                    "purpose": "HTTP handlers for tribe endpoints",
+                    "exports": ["createTribeHandler", "joinTribeHandler", "getTribeHandler", "kickMemberHandler", "declareWarHandler", "donateHandler"],
+                    "dependencies": ["server/modules/tribes/tribe.service"]
+                  },
+                  {
+                    "name": "tribe.routes.js",
+                    "purpose": "Tribe API routes - POST /tribes/create, POST /tribes/:id/join, GET /tribes/:id, POST /tribes/:id/kick, POST /tribes/:id/war, POST /tribes/:id/donate",
+                    "exports": ["tribeRouter"],
+                    "dependencies": ["express", "server/modules/tribes/tribe.controller", "server/middlewares/auth"]
+                  }
+                ]
+              },
+              {
+                "name": "economy",
+                "purpose": "Resource generation, VP calculation, upkeep, diminishing returns",
+                "files": [
+                  {
+                    "name": "economy.service.js",
+                    "purpose": "Gold generation, VP calculation with diminishing returns and underdog bonuses, upkeep deduction",
+                    "exports": ["calculateResourceGeneration", "calculateVPGeneration", "applyDiminishingReturns", "calculateUpkeep", "distributeGarrisonRewards"],
+                    "dependencies": ["server/models/User", "server/models/Tribe", "server/models/Territory", "server/config/constants"]
+                  },
+                  {
+                    "name": "economy.jobs.js",
+                    "purpose": "Cron job handlers for periodic resource/VP generation",
+                    "exports": ["generateResourcesJob", "generateVPJob", "applyUpkeepJob"],
+                    "dependencies": ["server/modules/economy/economy.service"]
+                  }
+                ]
+              },
+              {
+                "name": "seasons",
+                "purpose": "Season lifecycle management",
+                "files": [
+                  {
+                    "name": "season.service.js",
+                    "purpose": "Season creation, start/end logic, event triggering, prize calculation",
+                    "exports": ["createSeason", "startSeason", "endSeason", "getCurrentSeason", "triggerSeasonEvent"],
+                    "dependencies": ["server/models/Season", "server/models/Tribe", "server/models/User"]
+                  },
+                  {
+                    "name": "season.controller.js",
+                    "purpose": "HTTP handlers for season endpoints",
+                    "exports": ["getCurrentSeasonHandler", "getSeasonLeaderboardHandler"],
+                    "dependencies": ["server/modules/seasons/season.service"]
+                  },
+                  {
+                    "name": "season.routes.js",
+                    "purpose": "Season API routes - GET /seasons/current, GET /seasons/:id/leaderboard",
+                    "exports": ["seasonRouter"],
+                    "dependencies": ["express", "server/modules/seasons/season.controller"]
+                  }
+                ]
+              },
+              {
+                "name": "payments",
+                "purpose": "Entry fee collection and prize distribution",
+                "files": [
+                  {
+                    "name": "payment.service.js",
+                    "purpose": "Stripe payment processing, USDT transfers, prize distribution logic",
+                    "exports": ["collectEntryFee", "distributePrizes", "verifyPayment", "refundPayment"],
+                    "dependencies": ["server/config/stripe", "server/config/web3", "server/models/Payment", "server/models/User"]
+                  },
+                  {
+                    "name": "payment.controller.js",
+                    "purpose": "HTTP handlers for payment endpoints and webhooks",
+                    "exports": ["createPaymentIntentHandler", "stripeWebhookHandler", "getPaymentHistoryHandler"],
+                    "dependencies": ["server/modules/payments/payment.service"]
+                  },
+                  {
+                    "name": "payment.routes.js",
+                    "purpose": "Payment API routes - POST /payments/entry-fee, POST /payments/webhook, GET /payments/history",
+                    "exports": ["paymentRouter"],
+                    "dependencies": ["express", "server/modules/payments/payment.controller", "server/middlewares/auth"]
+                  }
+                ]
+              },
+              {
+                "name": "anticheat",
+                "purpose": "Anti-cheat detection and behavioral analysis",
+                "files": [
+                  {
+                    "name": "anticheat.service.js",
+                    "purpose": "Wallet age verification, behavioral pattern analysis, multi-account detection, flagging",
+                    "exports": ["verifyWalletAge", "trackBehavior", "analyzePatterns", "flagAccount", "getBehavioralFlags"],
+                    "dependencies": ["server/config/web3", "server/models/BehavioralFlag", "server/models/User"]
+                  },
+                  {
+                    "name": "anticheat.middleware.js",
+                    "purpose": "Middleware to track user actions for behavioral analysis",
+                    "exports": ["trackActionMiddleware"],
+                    "dependencies": ["server/modules/anticheat/anticheat.service"]
+                  }
+                ]
+              },
+              {
+                "name": "admin",
+                "purpose": "Admin panel - manual review, bans, compensations, rollbacks",
+                "files": [
+                  {
+                    "name": "admin.service.js",
+                    "purpose": "Admin operations - ban users, review accounts, give compensations, rollback battles, manage flags",
+                    "exports": ["banUser", "reviewAccount", "giveCompensation", "rollbackBattle", "getAdminDashboard"],
+                    "dependencies": ["server/models/User", "server/models/Battle", "server/models/AdminAuditLog", "server/models/BehavioralFlag"]
+                  },
+                  {
+                    "name": "admin.controller.js",
+                    "purpose": "HTTP handlers for admin endpoints",
+                    "exports": ["getFlagsHandler", "banUserHandler", "reviewAccountHandler", "compensateHandler", "rollbackBattleHandler"],
+                    "dependencies": ["server/modules/admin/admin.service"]
+                  },
+                  {
+                    "name": "admin.routes.js",
+                    "purpose": "Admin API routes - GET /admin/flags, POST /admin/ban/:userId, POST /admin/review/:userId, POST /admin/compensate, POST /admin/rollback/:battleId",
+                    "exports": ["adminRouter"],
+                    "dependencies": ["express", "server/modules/admin/admin.controller", "server/middlewares/auth"]
+                  }
+                ]
+              },
+              {
+                "name": "leaderboard",
+                "purpose": "Tribal and individual rankings",
+                "files": [
+                  {
+                    "name": "leaderboard.service.js",
+                    "purpose": "Calculate and cache tribal VP rankings, individual category leaders",
+                    "exports": ["getTribalLeaderboard", "updateLeaderboard", "getIndividualLeaders"],
+                    "dependencies": ["server/models/Tribe", "server/models/User"]
+                  },
+                  {
+                    "name": "leaderboard.controller.js",
+                    "purpose": "HTTP handlers for leaderboard endpoints",
+                    "exports": ["getLeaderboardHandler"],
+                    "dependencies": ["server/modules/leaderboard/leaderboard.service"]
+                  },
+                  {
+                    "name": "leaderboard.routes.js",
+                    "purpose": "Leaderboard API routes - GET /leaderboard",
+                    "exports": ["leaderboardRouter"],
+                    "dependencies": ["express", "server/modules/leaderboard/leaderboard.controller"]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "jobs",
+            "purpose": "Background job definitions for cron/scheduled tasks",
+            "files": [
+              {
+                "name": "scheduler.js",
+                "purpose": "Job scheduler setup - defines all cron schedules and triggers",
+                "exports": ["startScheduler", "stopScheduler"],
+                "dependencies": ["node-cron", "aws-sdk"]
+              },
+              {
+                "name": "buildingCompletion.job.js",
+                "purpose": "Every 10 seconds - check and complete building upgrades",
+                "exports": ["buildingCompletionJob"],
+                "dependencies": ["server/modules/buildings/building.service"]
+              },
+              {
+                "name": "trainingCompletion.job.js",
+                "purpose": "Every 10 seconds - check and complete unit training",
+                "exports": ["trainingCompletionJob"],
+                "dependencies": ["server/modules/units/unit.service"]
+              },
+              {
+                "name": "resourceGeneration.job.js",
+                "purpose": "Every 10 minutes - generate gold from territories and warehouses",
+                "exports": ["resourceGenerationJob"],
+                "dependencies": ["server/modules/economy/economy.service"]
+              },
+              {
+                "name": "vpGeneration.job.js",
+                "purpose": "Every 10 minutes - calculate and award VP from territorial control",
+                "exports": ["vpGenerationJob"],
+                "dependencies": ["server/modules/economy/economy.service"]
+              },
+              {
+                "name": "seasonEvents.job.js",
+                "purpose": "Trigger season events at specific times (Gold Rush Day 1, Fog of War Day 3, etc.)",
+                "exports": ["seasonEventsJob"],
+                "dependencies": ["server/modules/seasons/season.service"]
+              }
+            ]
+          },
+          {
+            "name": "utils",
+            "purpose": "Shared utility functions and helpers",
+            "files": [
+              {
+                "name": "logger.js",
+                "purpose": "Winston logger configuration - file and console transports, log levels",
+                "exports": ["logger"],
+                "dependencies": ["winston"]
+              },
+              {
+                "name": "calculations.js",
+                "purpose": "Pure calculation functions - battle power, VP, diminishing returns (duplicates combatCalculator but available as utils)",
+                "exports": ["calculatePower", "applyDiminishingReturns", "calculateCasualties"],
+                "dependencies": ["server/config/constants"]
+              },
+              {
+                "name": "validators.js",
+                "purpose": "Custom validation functions - wallet address format, unit counts, territory IDs",
+                "exports": ["isValidWallet", "isValidUnitComposition", "isValidTerritoryId"],
+                "dependencies": []
+              },
+              {
+                "name": "seeders.js",
+                "purpose": "Database seed scripts - initialize 50 territories with NPC garrisons",
+                "exports": ["seedTerritories", "seedTestUsers", "clearDatabase"],
+                "dependencies": ["server/models/Territory", "server/config/constants"]
+              },
+              {
+                "name": "responseFormatter.js",
+                "purpose": "Standardized API response formatting",
+                "exports": ["successResponse", "errorResponse"],
+                "dependencies": []
+              }
+            ]
+          },
+          {
+            "name": "events",
+            "purpose": "Event emitter for decoupling modules",
+            "files": [
+              {
+                "name": "eventBus.js",
+                "purpose": "Central event emitter - publish/subscribe pattern for cross-module communication",
+                "exports": ["eventBus", "EventTypes"],
+                "dependencies": ["events"]
+              },
+              {
+                "name": "battleEvents.js",
+                "purpose": "Battle event handlers - on battle resolved, update VP, log stats, notify users",
+                "exports": ["registerBattleEventHandlers"],
+                "dependencies": ["server/events/eventBus"]
+              },
+              {
+                "name": "territoryEvents.js",
+                "purpose": "Territory event handlers - on ownership change, recalculate tribe VP",
+                "exports": ["registerTerritoryEventHandlers"],
+                "dependencies": ["server/events/eventBus"]
+              }
+            ]
+          }
+        ],
+        "files": [
+          {
+            "name": "app.js",
+            "purpose": "Express app setup - middleware registration, route mounting, error handling",
+            "exports": ["app"],
+            "dependencies": ["express", "server/middlewares/security", "server/middlewares/errorHandler", "server/routes"]
+          },
+          {
+            "name": "server.js",
+            "purpose": "Server entry point - start Express server, connect to DB, initialize scheduler",
+            "exports": [],
+            "dependencies": ["server/app", "server/config/database", "server/jobs/scheduler"]
+          },
+          {
+            "name": "routes.js",
+            "purpose": "Central route aggregator - mounts all module routes under /api/v1",
+            "exports": ["apiRouter"],
+            "dependencies": ["express", "server/modules/*/routes"]
+          }
+        ]
+      },
+      {
+        "name": "client",
+        "purpose": "Frontend React application - game UI, map, tribe management",
+        "subdirectories": [
+          {
+            "name": "public",
+            "purpose": "Static assets and HTML entry point",
+            "files": [
+              {
+                "name": "index.html",
+                "purpose": "HTML entry point with root div for React mounting",
+                "exports": [],
+                "dependencies": []
+              },
+              {
+                "name": "favicon.ico",
+                "purpose": "Browser favicon",
+                "exports": [],
+                "dependencies": []
+              }
+            ]
+          },
+          {
+            "name": "src",
+            "purpose": "React source code",
+            "subdirectories": [
+              {
+                "name": "components",
+                "purpose": "Reusable React components",
+                "subdirectories": [
+                  {
+                    "name": "common",
+                    "purpose": "Generic UI components - buttons, modals, loaders",
+                    "files": [
+                      {
+                        "name": "Button.jsx",
+                        "purpose": "Styled button component with variants (primary, secondary, danger)",
+                        "exports": ["Button"],
+                        "dependencies": ["react"]
+                      },
+                      {
+                        "name": "Modal.jsx",
+                        "purpose": "Modal dialog component",
+                        "exports": ["Modal"],
+                        "dependencies": ["react"]
+                      },
+                      {
+                        "name": "Loader.jsx",
+                        "purpose": "Loading spinner component",
+                        "exports": ["Loader"],
+                        "dependencies": ["react"]
+                      }
+                    ]
+                  },
+                  {
+                    "name": "map",
+                    "purpose": "Territory map visualization components",
+                    "files": [
+                      {
+                        "name": "TerritoryMap.jsx",
+                        "purpose": "Canvas-based map rendering 50 territories as nodes",
+                        "exports": ["TerritoryMap"],
+                        "dependencies": ["react", "client/hooks/useTerritories"]
+                      },
+                      {
+                        "name": "TerritoryNode.jsx",
+                        "purpose": "Single territory representation with color coding by tier/owner",
+                        "exports": ["TerritoryNode"],
+                        "dependencies": ["react"]
+                      }
+                    ]
+                  },
+                  {
+                    "name": "base",
+                    "purpose": "Base/camp view components",
+                    "files": [
+                      {
+                        "name": "BuildingPanel.jsx",
+                        "purpose": "Display buildings with upgrade buttons and timers",
+                        "exports": ["BuildingPanel"],
+                        "dependencies": ["react", "client/hooks/useBuildings"]
+                      },
+                      {
+                        "name": "ArmyPanel.jsx",
+                        "purpose": "Display army composition and training queue",
+                        "exports": ["ArmyPanel"],
+                        "dependencies": ["react", "client/hooks/useArmy"]
+                      },
+                      {
+                        "name": "ResourceBar.jsx",
+                        "purpose": "Top bar showing gold, VP, rank",
+                        "exports": ["ResourceBar"],
+                        "dependencies": ["react", "client/hooks/useUser"]
+                      }
+                    ]
+                  },
+                  {
+                    "name": "tribe",
+                    "purpose": "Tribe management components",
+                    "files": [
+                      {
+                        "name": "TribePanel.jsx",
+                        "purpose": "Tribe overview - members, treasury, war status",
+                        "exports": ["TribePanel"],
+                        "dependencies": ["react", "client/hooks/useTribe"]
+                      },
+                      {
+                        "name": "TribeChat.jsx",
+                        "purpose": "In-game tribe chat interface",
+                        "exports": ["TribeChat"],
+                        "dependencies": ["react"]
+                      }
+                    ]
+                  },
+                  {
+                    "name": "battle",
+                    "purpose": "Battle UI components",
+                    "files": [
+                      {
+                        "name": "AttackModal.jsx",
+                        "purpose": "Modal for selecting units and formation for attack",
+                        "exports": ["AttackModal"],
+                        "dependencies": ["react"]
+                      },
+                      {
+                        "name": "BattleHistory.jsx",
+                        "purpose": "List of recent battles with results",
+                        "exports": ["BattleHistory"],
+                        "dependencies": ["react", "client/hooks/useBattles"]
+                      },
+                      {
+                        "name": "BattleResult.jsx",
+                        "purpose": "Battle result display with casualties, loot, VP gained",
+                        "exports": ["BattleResult"],
+                        "dependencies": ["react"]
+                      }
+                    ]
+                  },
+                  {
+                    "name": "leaderboard",
+                    "purpose": "Leaderboard components",
+                    "files": [
+                      {
+                        "name": "Leaderboard.jsx",
+                        "purpose": "Tribal VP rankings table",
+                        "exports": ["Leaderboard"],
+                        "dependencies": ["react", "client/hooks/useLeaderboard"]
+                      }
+                    ]
+                  },
+                  {
+                    "name": "admin",
+                    "purpose": "Admin panel components (protected)",
+                    "files": [
+                      {
+                        "name": "AdminDashboard.jsx",
+                        "purpose": "Admin overview - flags, bans, season management",
+                        "exports": ["AdminDashboard"],
+                        "dependencies": ["react", "client/hooks/useAdmin"]
+                      },
+                      {
+                        "name": "FlagList.jsx",
+                        "purpose": "List of behavioral flags for manual review",
+                        "exports": ["FlagList"],
+                        "dependencies": ["react"]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "pages",
+                "purpose": "Top-level page components for routing",
+                "files": [
+                  {
+                    "name": "LoginPage.jsx",
+                    "purpose": "Wallet connection page with RainbowKit",
+                    "exports": ["LoginPage"],
+                    "dependencies": ["react", "@rainbow-me/rainbowkit"]
+                  },
+                  {
+                    "name": "GamePage.jsx",
+                    "purpose": "Main game page with map, base, tribe tabs",
+                    "exports": ["GamePage"],
+                    "dependencies": ["react", "client/components/map", "client/components/base", "client/components/tribe"]
+                  },
+                  {
+                    "name": "TribeFormationPage.jsx",
+                    "purpose": "Pre-season tribe creation/joining page",
+                    "exports": ["TribeFormationPage"],
+                    "dependencies": ["react"]
+                  },
+                  {
+                    "name": "LeaderboardPage.jsx",
+                    "purpose": "Full leaderboard view",
+                    "exports": ["LeaderboardPage"],
+                    "dependencies": ["react", "client/components/leaderboard"]
+                  },
+                  {
+                    "name": "AdminPage.jsx",
+                    "purpose": "Admin panel page (protected route)",
+                    "exports": ["AdminPage"],
+                    "dependencies": ["react", "client/components/admin"]
+                  }
+                ]
+              },
+              {
+                "name": "hooks",
+                "purpose": "Custom React hooks for data fetching and state",
+                "files": [
+                  {
+                    "name": "useUser.js",
+                    "purpose": "Fetch and manage user data - gold, army, buildings, VP",
+                    "exports": ["useUser"],
+                    "dependencies": ["react", "client/services/api"]
+                  },
+                  {
+                    "name": "useTribe.js",
+                    "purpose": "Fetch and manage tribe data",
+                    "exports": ["useTribe"],
+                    "dependencies": ["react", "client/services/api"]
+                  },
+                  {
+                    "name": "useTerritories.js",
+                    "purpose": "Fetch all territories with ownership and garrison data",
+                    "exports": ["useTerritories"],
+                    "dependencies": ["react", "client/services/api"]
+                  },
+                  {
+                    "name": "useBuildings.js",
+                    "purpose": "Fetch building statuses and handle upgrades",
+                    "exports": ["useBuildings"],
+                    "dependencies": ["react", "client/services/api"]
+                  },
+                  {
+                    "name": "useArmy.js",
+                    "purpose": "Fetch army composition and training queue",
+                    "exports": ["useArmy"],
+                    "dependencies": ["react", "client/services/api"]
+                  },
+                  {
+                    "name": "useBattles.js",
+                    "purpose": "Fetch battle history",
+                    "exports": ["useBattles"],
+                    "dependencies": ["react", "client/services/api"]
+                  },
+                  {
+                    "name": "useLeaderboard.js",
+                    "purpose": "Fetch leaderboard data",
+                    "exports": ["useLeaderboard"],
+                    "dependencies": ["react", "client/services/api"]
+                  },
+                  {
+                    "name": "useAdmin.js",
+                    "purpose": "Admin-only hook for flags and actions",
+                    "exports": ["useAdmin"],
+                    "dependencies": ["react", "client/services/api"]
+                  },
+                  {
+                    "name": "usePolling.js",
+                    "purpose": "Custom hook for polling API every 10 seconds",
+                    "exports": ["usePolling"],
+                    "dependencies": ["react"]
+                  }
+                ]
+              },
+              {
+                "name": "services",
+                "purpose": "API client and utilities",
+                "files": [
+                  {
+                    "name": "api.js",
+                    "purpose": "Axios instance with base URL, auth interceptors, error handling",
+                    "exports": ["apiClient"],
+                    "dependencies": ["axios"]
+                  },
+                  {
+                    "name": "wallet.js",
+                    "purpose": "Wallet connection utilities using wagmi + RainbowKit",
+                    "exports": ["connectWallet", "signMessage", "disconnectWallet"],
+                    "dependencies": ["wagmi", "@rainbow-me/rainbowkit"]
+                  }
+                ]
+              },
+              {
+                "name": "store",
+                "purpose": "Global state management (Zustand or Context)",
+                "files": [
+                  {
+                    "name": "authStore.js",
+                    "purpose": "Auth state - wallet address, JWT token, login/logout actions",
+                    "exports": ["useAuthStore"],
+                    "dependencies": ["zustand"]
+                  },
+                  {
+                    "name": "gameStore.js",
+                    "purpose": "Game state - current season, user data, tribe data",
+                    "exports": ["useGameStore"],
+                    "dependencies": ["zustand"]
+                  }
+                ]
+              },
+              {
+                "name": "utils",
+                "purpose": "Frontend utility functions",
+                "files": [
+                  {
+                    "name": "formatters.js",
+                    "purpose": "Format numbers, dates, VP, gold for display",
+                    "exports": ["formatGold", "formatVP", "formatTime"],
+                    "dependencies": []
+                  },
+                  {
+                    "name": "constants.js",
+                    "purpose": "Frontend constants - API base URL, polling interval, colors",
+                    "exports": ["API_BASE_URL", "POLLING_INTERVAL", "TIER_COLORS"],
+                    "dependencies": []
+                  }
+                ]
+              },
+              {
+                "name": "styles",
+                "purpose": "Global CSS and Tailwind config",
+                "files": [
+                  {
+                    "name": "index.css",
+                    "purpose": "Global styles and Tailwind imports",
+                    "exports": [],
+                    "dependencies": []
+                  },
+                  {
+                    "name": "tailwind.config.js",
+                    "purpose": "Tailwind CSS configuration",
+                    "exports": [],
+                    "dependencies": []
+                  }
+                ]
+              }
+            ],
+            "files": [
+              {
+                "name": "App.jsx",
+                "purpose": "Root React component - routing, wagmi/RainbowKit providers",
+                "exports": ["App"],
+                "dependencies": ["react", "react-router-dom", "wagmi", "@rainbow-me/rainbowkit"]
+              },
+              {
+                "name": "main.jsx",
+                "purpose": "React entry point - render App to DOM",
+                "exports": [],
+                "dependencies": ["react", "react-dom", "client/App"]
+              }
+            ]
+          }
+        ],
+        "files": [
+          {
+            "name": "package.json",
+            "purpose": "Frontend dependencies - React, Vite, wagmi, RainbowKit, Tailwind, Zustand",
+            "exports": [],
+            "dependencies": []
+          },
+          {
+            "name": "vite.config.js",
+            "purpose": "Vite build configuration",
+            "exports": [],
+            "dependencies": []
+          }
+        ]
+      },
+      {
+        "name": "tests",
+        "purpose": "Test suites mirroring source structure",
+        "subdirectories": [
+          {
+            "name": "unit",
+            "purpose": "Unit tests for pure functions and services",
+            "subdirectories": [
+              {
+                "name": "battles",
+                "purpose": "Battle system unit tests",
+                "files": [
+                  {
+                    "name": "combatCalculator.test.js",
+                    "purpose": "Test battle power calculations, counter bonuses, terrain modifiers, casualties - CRITICAL",
+                    "exports": [],
+                    "dependencies": ["jest", "server/modules/battles/services/combatCalculator"]
+                  }
+                ]
+              },
+              {
+                "name": "economy",
+                "purpose": "Economy calculation tests",
+                "files": [
+                  {
+                    "name": "economy.service.test.js",
+                    "purpose": "Test diminishing returns, upkeep, VP generation formulas",
+                    "exports": [],
+                    "dependencies": ["jest", "server/modules/economy/economy.service"]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "integration",
+            "purpose": "Integration tests for API endpoints",
+            "files": [
+              {
+                "name": "auth.test.js",
+                "purpose": "Test wallet connection flow, JWT generation",
+                "exports": [],
+                "dependencies": ["jest", "supertest", "server/app"]
+              },
+              {
+                "name": "battles.test.js",
+                "purpose": "Test attack endpoint, battle resolution, database updates",
+                "exports": [],
+                "dependencies": ["jest", "supertest", "server/app"]
+              },
+              {
+                "name": "tribes.test.js",
+                "purpose": "Test tribe creation, joining, voting, war declarations",
+                "exports": [],
+                "dependencies": ["jest", "supertest", "server/app"]
+              }
+            ]
+          },
+          {
+            "name": "load",
+            "purpose": "Load testing scripts",
+            "files": [
+              {
+                "name": "artillery.yml",
+                "purpose": "Artillery.io config for simulating 300 concurrent users",
+                "exports": [],
+                "dependencies": []
+              },
+              {
+                "name": "scenarios.js",
+                "purpose": "User behavior scenarios for load testing",
+                "exports": [],
+                "dependencies": []
+              }
+            ]
+          }
+        ],
+        "files": [
+          {
+            "name": "setup.js",
+            "purpose": "Jest setup - mock database, seed test data",
+            "exports": [],
+            "dependencies": ["jest", "mongodb-memory-server"]
+          }
+        ]
+      },
+      {
+        "name": ".github",
+        "purpose": "GitHub-specific configurations",
+        "subdirectories": [
+          {
+            "name": "workflows",
+            "purpose": "CI/CD pipelines",
+            "files": [
+              {
+                "name": "test.yml",
+                "purpose": "Run tests on every push/PR",
+                "exports": [],
+                "dependencies": []
+              },
+              {
+                "name": "deploy.yml",
+                "purpose": "Deploy to production on merge to main",
+                "exports": [],
+                "dependencies": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "scripts",
+        "purpose": "Utility scripts for development and deployment",
+        "files": [
+          {
+            "name": "seed.js",
+            "purpose": "Seed database with territories and test data",
+            "exports": [],
+            "dependencies": ["server/utils/seeders"]
+          },
+          {
+            "name": "migrate.js",
+            "purpose": "Run database migrations for schema changes",
+            "exports": [],
+            "dependencies": []
+          },
+          {
+            "name": "resetSeason.js",
+            "purpose": "Reset database for new season - clear users, battles, keep territories",
+            "exports": [],
+            "dependencies": []
+          }
+        ]
+      },
+      {
+        "name": "docs",
+        "purpose": "Project documentation",
+        "files": [
+          {
+            "name": "API.md",
+            "purpose": "API endpoint documentation with examples",
+            "exports": [],
+            "dependencies": []
+          },
+          {
+            "name": "SETUP.md",
+            "purpose": "Development environment setup guide",
+            "exports": [],
+            "dependencies": []
+          },
+          {
+            "name": "DEPLOYMENT.md",
+            "purpose": "Production deployment instructions",
+            "exports": [],
+            "dependencies": []
+          }
+        ]
+      }
+    ]
+  },
+  "module_dependency_graph": {
+    "auth": [],
+    "users": ["auth"],
+    "buildings": ["users", "economy"],
+    "units": ["users", "economy"],
+    "territories": ["users", "tribes"],
+    "battles": ["users", "tribes", "territories", "units", "economy"],
+    "tribes": ["users"],
+    "economy": ["users", "tribes", "territories"],
+    "seasons": ["tribes", "users", "economy"],
+    "payments": ["users", "tribes", "seasons"],
+    "anticheat": ["users"],
+    "admin": ["users", "battles", "tribes", "anticheat"],
+    "leaderboard": ["tribes", "users"]
+  },
+  "database_collections": [
+    {
+      "name": "users",
+      "purpose": "Player accounts with wallet, resources, army, buildings, training queue, VP, behavioral data",
+      "key_fields": ["_id", "walletAddress", "tribeId", "seasonId", "gold", "army", "buildings", "trainingQueue", "victoryPoints", "vpRank", "version"],
+      "indexes": [
+        "{ walletAddress: 1 } unique",
+        "{ seasonId: 1, victoryPoints: -1 }",
+        "{ tribeId: 1 }",
+        "{ seasonId: 1, lastActive: -1 }"
+      ]
+    },
+    {
+      "name": "tribes",
+      "purpose": "12-person teams with roles, treasury, VP, territory ownership, war declarations",
+      "key_fields": ["_id", "name", "tag", "chieftainId", "captains", "members", "treasury", "totalVP", "territoriesControlled", "warTarget", "seasonId"],
+      "indexes": [
+        "{ name: 1, seasonId: 1 } unique",
+        "{ seasonId: 1, totalVP: -1 }",
+        "{ tag: 1 } unique"
+      ]
+    },
+    {
+      "name": "territories",
+      "purpose": "50 map tiles with ownership, garrisons, NPC defenders, VP/gold generation, shields",
+      "key_fields": ["_id", "territoryId", "seasonId", "tier", "terrain", "ownerId", "garrison", "garrisonContributors", "npcGarrison", "goldPerHour", "vpPerHour", "shieldUntil"],
+      "indexes": [
+        "{ territoryId: 1, seasonId: 1 } unique",
+        "{ ownerId: 1 }",
+        "{ seasonId: 1, tier: 1 }"
+      ]
+    },
+    {
+      "name": "battles",
+      "purpose": "Battle history log with armies, formations, power calculations, casualties, loot, VP awards",
+      "key_fields": ["_id", "attackerId", "defenderId", "territoryId", "seasonId", "attackerArmy", "defenderArmy", "attackerFormation", "defenderFormation", "terrain", "attackerPower", "defenderPower", "winnerId", "casualties", "loot", "vpGained", "rngSeed", "timestamp"],
+      "indexes": [
+        "{ attackerId: 1, timestamp: -1 }",
+        "{ defenderId: 1, timestamp: -1 }",
+        "{ territoryId: 1, timestamp: -1 }",
+        "{ seasonId: 1, timestamp: -1 }"
+      ]
+    },
+    {
+      "name": "seasons",
+      "purpose": "Season metadata - start/end dates, player count, prize pool, events schedule, status",
+      "key_fields": ["_id", "seasonNumber", "startDate", "endDate", "status", "playerCount", "prizePool", "events", "adaptiveRingConfig"],
+      "indexes": [
+        "{ seasonNumber: 1 } unique",
+        "{ status: 1 }",
+        "{ startDate: -1 }"
+      ]
+    },
+    {
+      "name": "payments",
+      "purpose": "Payment records - entry fees, prize distributions, Stripe/USDT transactions, status",
+      "key_fields": ["_id", "userId", "seasonId", "type", "amount", "currency", "paymentMethod", "status", "stripePaymentIntentId", "transactionHash", "timestamp"],
+      "indexes": [
+        "{ userId: 1, seasonId: 1 }",
+        "{ seasonId: 1, type: 1 }",
+        "{ status: 1 }",
+        "{ stripePaymentIntentId: 1 }"
+      ]
+    },
+    {
+      "name": "adminauditlogs",
+      "purpose": "Audit trail for all admin actions - bans, compensations, rollbacks, reviews with reasons",
+      "key_fields": ["_id", "adminId", "adminRole", "action", "targetType", "targetId", "reason", "evidence", "changesBefore", "changesAfter", "status", "approvedBy", "timestamp"],
+      "indexes": [
+        "{ adminId: 1, timestamp: -1 }",
+        "{ action: 1, timestamp: -1 }",
+        "{ targetId: 1 }",
+        "{ status: 1 }"
+      ]
+    },
+    {
+      "name": "behavioralflags",
+      "purpose": "Anti-cheat tracking - login patterns, IP addresses, browser fingerprints, multi-account detection flags",
+      "key_fields": ["_id", "userId", "seasonId", "flagType", "severity", "loginTimes", "ipAddresses", "browserFingerprints", "suspiciousPatterns", "reviewStatus", "reviewedBy", "timestamp"],
+      "indexes": [
+        "{ userId: 1, seasonId: 1 }",
+        "{ flagType: 1, severity: -1 }",
+        "{ reviewStatus: 1 }",
+        "{ seasonId: 1, severity: -1 }"
+      ]
+    }
+  ],
+  "api_route_groups": [
+    {
+      "prefix": "/api/v1/auth",
+      "module": "auth",
+      "endpoints_count": 2,
+      "auth_required": false
+    },
+    {
+      "prefix": "/api/v1/users",
+      "module": "users",
+      "endpoints_count": 3,
+      "auth_required": true
+    },
+    {
+      "prefix": "/api/v1/buildings",
+      "module": "buildings",
+      "endpoints_count": 2,
+      "auth_required": true
+    },
+    {
+      "prefix": "/api/v1/units",
+      "module": "units",
+      "endpoints_count": 2,
+      "auth_required": true
+    },
+    {
+      "prefix": "/api/v1/territories",
+      "module": "territories",
+      "endpoints_count": 5,
+      "auth_required": true
+    },
+    {
+      "prefix": "/api/v1/battles",
+      "module": "battles",
+      "endpoints_count": 2,
+      "auth_required": true
+    },
+    {
+      "prefix": "/api/v1/tribes",
+      "module": "tribes",
+      "endpoints_count": 6,
+      "auth_required": true
+    },
+    {
+      "prefix": "/api/v1/leaderboard",
+      "module": "leaderboard",
+      "endpoints_count": 1,
+      "auth_required": false
+    },
+    {
+      "prefix": "/api/v1/seasons",
+      "module": "seasons",
+      "endpoints_count": 2,
+      "auth_required": false
+    },
+    {
+      "prefix": "/api/v1/payments",
+      "module": "payments",
+      "endpoints_count": 3,
+      "auth_required": true
+    },
+    {
+      "prefix": "/api/v1/admin",
+      "module": "admin",
+      "endpoints_count": 5,
+      "auth_required": true
+    }
+  ],
+  "background_jobs": [
+    {
+      "name": "buildingCompletionJob",
+      "schedule": "*/10 * * * * *",
+      "purpose": "Check and complete building upgrades that have finished their timers"
+    },
+    {
+      "name": "trainingCompletionJob",
+      "schedule": "*/10 * * * * *",
+      "purpose": "Check and complete unit training that has finished queue timers"
+    },
+    {
+      "name": "resourceGenerationJob",
+      "schedule": "*/10 * * * *",
+      "purpose": "Generate gold from territories (with diminishing returns) and warehouse passive income"
+    },
+    {
+      "name": "vpGenerationJob",
+      "schedule": "*/10 * * * *",
+      "purpose": "Calculate and award VP from territorial control with underdog bonuses and diminishing returns"
+    },
+    {
+      "name": "upkeepDeductionJob",
+      "schedule": "*/10 * * * *",
+      "purpose": "Deduct territory upkeep (20g/hr each) and army upkeep (1g/hr per 10 units) with leader penalties"
+    },
+    {
+      "name": "seasonEventsJob",
+      "schedule": "event-driven",
+      "purpose": "Trigger season events at specific times - Gold Rush Day 1, Fog of War Day 3, Raid Boss Day 5, Center Rush Day 8, Armageddon Day 10"
+    },
+    {
+      "name": "leaderboardUpdateJob",
+      "schedule": "*/10 * * * *",
+      "purpose": "Recalculate tribal VP rankings and cache for fast leaderboard queries"
+    }
+  ],
+  "critical_paths": [
+    {
+      "name": "Battle Resolution Flow",
+      "description": "Most critical path for game integrity - must be atomic, prevent race conditions, handle casualties correctly",
+      "files_involved": [
+        "server/modules/battles/battle.controller.js",
+        "server/modules/battles/battle.service.js",
+        "server/modules/battles/services/battleQueue.js",
+        "server/modules/battles/services/battleResolver.js",
+        "server/modules/battles/services/combatCalculator.js",
+        "server/models/User.js",
+        "server/models/Territory.js",
+        "server/models/Battle.js"
+      ],
+      "transaction_required": true
+    },
+    {
+      "name": "Territory Capture Transaction",
+      "description": "Change ownership, update garrisons, redistribute VP/gold, emit events - must be atomic",
+      "files_involved": [
+        "server/modules/battles/services/battleResolver.js",
+        "server/modules/territories/territory.service.js",
+        "server/models/Territory.js",
+        "server/models/Tribe.js",
+        "server/models/User.js"
+      ],
+      "transaction_required": true
+    },
+    {
+      "name": "Resource Generation Cron",
+      "description": "Economy engine - calculate gold/VP with diminishing returns, apply upkeep, distribute garrison rewards",
+      "files_involved": [
+        "server/jobs/resourceGeneration.job.js",
+        "server/jobs/vpGeneration.job.js",
+        "server/modules/economy/economy.service.js",
+        "server/config/constants.js",
+        "server/models/User.js",
+        "server/models/Tribe.js",
+        "server/models/Territory.js"
+      ],
+      "transaction_required": false
+    },
+    {
+      "name": "Building Upgrade with Optimistic Locking",
+      "description": "Prevent gold duplication via concurrent requests using version field",
+      "files_involved": [
+        "server/modules/buildings/building.controller.js",
+        "server/modules/buildings/building.service.js",
+        "server/models/User.js"
+      ],
+      "transaction_required": false
+    },
+    {
+      "name": "Payment Flow (Entry Fee)",
+      "description": "Collect $25 USDT via Stripe or wallet transfer, verify payment, register user for season",
+      "files_involved": [
+        "server/modules/payments/payment.controller.js",
+        "server/modules/payments/payment.service.js",
+        "server/config/stripe.js",
+        "server/config/web3.js",
+        "server/models/Payment.js",
+        "server/models/User.js",
+        "server/models/Season.js"
+      ],
+      "transaction_required": true
+    },
+    {
+      "name": "Anti-Cheat Behavioral Analysis",
+      "description": "Track user actions, detect patterns, flag multi-accounting for manual review",
+      "files_involved": [
+        "server/modules/anticheat/anticheat.middleware.js",
+        "server/modules/anticheat/anticheat.service.js",
+        "server/models/BehavioralFlag.js",
+        "server/models/User.js"
+      ],
+      "transaction_required": false
+    }
+  ],
+  "scalability_notes": [
+    "Battle queue using Bull.js + Redis ensures sequential processing per territory, prevents race conditions, and enables horizontal scaling by running multiple workers",
+    "MongoDB transactions on battles and territory captures guarantee ACID compliance for critical game state changes",
+    "Optimistic locking (version field) on User model prevents gold/resource duplication from concurrent requests without heavy database locks",
+    "REST + 10-second polling sufficient for 300 players in MVP; migrate to Socket.io for real-time updates at 1000+ players (Season 4+)",
+    "Leaderboard caching strategy: calculate every 10 minutes via cron, cache results in Redis, serve from cache (reduces DB queries from 1000/sec to 6/min)",
+    "Database sharding potential: shard by seasonId (each season is isolated data) for multi-season concurrent play at 10K+ players",
+    "CDN for static assets (React build) via Cloudflare reduces server load and improves global latency",
+    "Future microservices extraction: battles module → dedicated battle service with its own DB, queue remains centralized"
+  ],
+  "mvp_priority": {
+    "phase_1": [
+      "Database schemas (User, Tribe, Territory, Battle, Season, Payment models)",
+      "Express API structure with middleware (auth, validation, error handling, rate limiting, security)",
+      "Wallet authentication (Web3 signature verification, JWT generation)",
+      "Frontend skeleton (React routing, RainbowKit wallet connection, login page)"
+    ],
+    "phase_2": [
+      "Building system (3 buildings with 10 levels, upgrade logic, timers)",
+      "Resource management (gold generation, warehouse passive income)",
+      "Cron jobs (building completion, resource generation every 10 minutes)",
+      "Building UI (upgrade buttons, progress bars, cost display)"
+    ],
+    "phase_3": [
+      "Unit training system (4 unit types, training queue, cost/time calculations)",
+      "Combat service (battle power formula, counter bonuses, terrain modifiers, casualties - PURE FUNCTIONS)",
+      "Battle queue (Bull.js + Redis setup for sequential battle processing)",
+      "Territory capture mechanics (ownership transfer, garrison updates)",
+      "Battle UI (attack modal, unit selection, formation choice, battle results animation)",
+      "Unit tests for combat calculator (100% coverage on battle power, casualties, loot)"
+    ],
+    "phase_4": [
+      "Tribe system (create, join, 12-member limit, roles: Chieftain/Captains/Warriors)",
+      "Treasury (voluntary contributions, 10% territorial tax, 20% battle loot)",
+      "Voting (war declarations require 8/12 votes, member kicks)",
+      "VP system (hourly generation from territories, battle rewards, underdog bonuses)",
+      "Leaderboard (tribal VP rankings, cached updates every 10 minutes)",
+      "Tribe UI (member list, treasury display, chat interface, war declaration buttons)"
+    ],
+    "phase_5": [
+      "Stripe integration (entry fee collection, payment intents, webhook handling)",
+      "USDT wallet transfers (prize distribution logic)",
+      "Security hardening (MongoDB transactions for battles/territories, optimistic locking on users)",
+      "Anti-cheat layer 1 (wallet age verification: 90+ days, 10+ transactions)",
+      "Anti-cheat layer 2 (behavioral tracking: login times, IP addresses, browser fingerprints)",
+      "Manual review dashboard (admin panel for reviewing flags, banning accounts)",
+      "Load testing (Artillery.io: simulate 300 concurrent users, 1000 API requests/min)"
+    ],
+    "phase_6": [
+      "Map visualization (Canvas-based rendering of 50 territories as nodes, color-coded by tier/owner)",
+      "Mobile responsiveness (Tailwind utility classes, test on iPhone/Android)",
+      "Alpha testing (recruit 50 players, run 3-day mini-season, gather feedback)",
+      "Bug fixes from alpha (prioritize game-breaking bugs: gold duplication, battle errors, login failures)",
+      "Deployment (Docker containers, VPS setup, MongoDB Atlas, Redis cloud, Cloudflare CDN)",
+      "Monitoring (Winston logging, Sentry error tracking, UptimeRobot uptime checks)"
+    ],
+    "post_mvp": [
+      "WebSocket migration (Socket.io for real-time updates, replace polling)",
+      "Tech tree system (post-building research branches)",
+      "Advanced formations (Flanking, Ambush, Counter, Turtle formations)",
+      "Individual leaderboards (5 categories: War Hero, Empire Builder, Economic Master, Survivor, Support Legend)",
+      "Additional season events (Plague, Black Market, Diplomatic Day)",
+      "Unit veterancy (cross-season progression, cosmetic upgrades)",
+      "Mobile native apps (iOS/Android with push notifications)"
+    ]
+  }
+}

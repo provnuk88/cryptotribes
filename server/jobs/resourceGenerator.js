@@ -1,0 +1,103 @@
+/**
+ * RESOURCE GENERATOR JOB
+ * Processes hourly gold generation and upkeep for all users
+ * Cron: every 10 minutes (accumulates to hourly)
+ */
+
+const { processHourlyResourceGeneration } = require('../services/economyService');
+const logger = require('../utils/logger');
+
+// Track accumulated time for hourly processing
+let lastHourlyRun = null;
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * Run the resource generation job
+ * Called every 10 minutes, but only processes when an hour has passed
+ */
+async function run() {
+  const now = Date.now();
+
+  // Initialize on first run
+  if (!lastHourlyRun) {
+    lastHourlyRun = now;
+    logger.info('Resource generator initialized');
+    return { skipped: true, reason: 'Initialized' };
+  }
+
+  // Check if an hour has passed since last processing
+  const timeSinceLastRun = now - lastHourlyRun;
+
+  if (timeSinceLastRun < HOUR_MS) {
+    const minutesRemaining = Math.ceil((HOUR_MS - timeSinceLastRun) / 60000);
+    return {
+      skipped: true,
+      reason: 'Waiting for hourly interval',
+      minutesRemaining,
+    };
+  }
+
+  try {
+    logger.info('Running hourly resource generation');
+    const result = await processHourlyResourceGeneration();
+
+    lastHourlyRun = now;
+
+    logger.info('Resource generation completed', {
+      usersProcessed: result.usersProcessed,
+      goldDistributed: result.goldDistributed,
+    });
+
+    return result;
+  } catch (error) {
+    logger.error('Resource generation failed', error);
+    throw error;
+  }
+}
+
+/**
+ * Force run the resource generation (for testing/admin)
+ */
+async function forceRun() {
+  try {
+    logger.info('Force running resource generation');
+    const result = await processHourlyResourceGeneration();
+    lastHourlyRun = Date.now();
+    return result;
+  } catch (error) {
+    logger.error('Force resource generation failed', error);
+    throw error;
+  }
+}
+
+/**
+ * Get job status
+ */
+function getStatus() {
+  const now = Date.now();
+  const timeSinceLastRun = lastHourlyRun ? now - lastHourlyRun : null;
+
+  return {
+    lastRun: lastHourlyRun ? new Date(lastHourlyRun).toISOString() : null,
+    nextRun: lastHourlyRun
+      ? new Date(lastHourlyRun + HOUR_MS).toISOString()
+      : 'Pending initialization',
+    minutesSinceLastRun: timeSinceLastRun
+      ? Math.floor(timeSinceLastRun / 60000)
+      : null,
+  };
+}
+
+/**
+ * Reset the timer (for testing)
+ */
+function reset() {
+  lastHourlyRun = null;
+}
+
+module.exports = {
+  run,
+  forceRun,
+  getStatus,
+  reset,
+};
